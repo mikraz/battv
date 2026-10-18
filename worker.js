@@ -1,5 +1,6 @@
 // Ponte https per BatTV (Cloudflare Worker)
 // Riceve richieste in https e le gira al provider in http.
+// Serve anche a leggere il DNS del provider (dns.php), che non permette la lettura diretta da un'altra pagina.
 // 1) Cambia la chiave qui sotto con una parola tua, lunga e non ovvia.
 // 2) Nel player, campo "Ponte": https://NOME.TUOACCOUNT.workers.dev/?k=LA_TUA_CHIAVE
 

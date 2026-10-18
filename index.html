@@ -117,7 +117,8 @@ body.has-mini #list{padding-bottom:300px}
   <form class="box" id="lf">
     <h1>BatTV</h1>
     <p>Inserisci i dati Xtream del tuo provider.</p>
-    <label>Server <input id="srv" type="url" placeholder="https://server.esempio:443" required></label>
+    <label>Server <input id="srv" type="url" placeholder="https://server.esempio:443"></label>
+    <label>Indirizzo DNS del provider, per aggiornare il server da solo (facoltativo) <input id="dns" type="url" placeholder="https://sito.esempio/dns.php"></label>
     <label>Username <input id="usr" type="text" autocomplete="username" required></label>
     <label>Password <input id="pwd" type="password" autocomplete="current-password" required></label>
     <label>Ponte https (se il server è in http) <input id="px" type="url" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
@@ -159,27 +160,93 @@ body.has-mini #list{padding-bottom:300px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
-const S={mode:null,base:'',u:'',p:'',tab:'live',cat:'*',q:'',limit:120,items:{},cats:{}};
+const S={mode:null,base:'',u:'',p:'',dns:'',home:'',tab:'live',cat:'*',q:'',limit:120,items:{},cats:{}};
 const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+/* Passa sempre dal ponte, se c'è (serve per leggere il DNS, che non permette la lettura diretta) */
+const PA=u=>S.px?S.px+(S.px.includes('?')?'&':'?')+'url='+encodeURIComponent(u):u;
 /* Passa dal ponte gli indirizzi http (bloccati da una pagina https) */
-const P=u=>S.px&&/^http:/i.test(u||'')?S.px+(S.px.includes('?')?'&':'?')+'url='+encodeURIComponent(u):u;
+const P=u=>S.px&&/^http:/i.test(u||'')?PA(u):u;
+const mixed=b=>location.protocol==='https:'&&/^http:/i.test(b)&&!S.px;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- Xtream ---------- */
-async function api(action,extra=''){
-  const url=`${S.base}/player_api.php?username=${encodeURIComponent(S.u)}&password=${encodeURIComponent(S.p)}${action?'&action='+action:''}${extra}`;
+async function api(action,extra='',noRetry){
+  const url=()=>`${S.base}/player_api.php?username=${encodeURIComponent(S.u)}&password=${encodeURIComponent(S.p)}${action?'&action='+action:''}${extra}`;
   let r;
-  try{r=await fetch(P(url))}catch(e){throw new Error(S.px?'Il ponte non risponde: controlla l\'indirizzo del ponte.':'Il server non risponde o non accetta connessioni da questa pagina.')}
+  try{r=await fetch(P(url()))}catch(e){
+    /* Il server non risponde: forse il provider l'ha cambiato, chiedo quello nuovo al DNS e riprovo una volta */
+    if(!noRetry&&await refreshBase())return api(action,extra,true);
+    throw new Error(S.px?'Il ponte non risponde: controlla l\'indirizzo del ponte.':'Il server non risponde o non accetta connessioni da questa pagina.');
+  }
   if(r.status===403&&S.px)throw new Error('Il ponte rifiuta la chiave: controlla la parte ?k= nell\'indirizzo del ponte.');
-  if(!r.ok)throw new Error('Il server ha risposto con errore '+r.status+'.');
+  if(!r.ok){
+    if(!noRetry&&r.status>=500&&await refreshBase())return api(action,extra,true);
+    throw new Error('Il server ha risposto con errore '+r.status+'.');
+  }
   return r.json();
 }
-async function loginXtream(base,u,p,px){
-  S.mode='x';S.base=base.replace(/\/+$/,'');S.u=u;S.p=p;S.px=(px||'').trim();
-  if(location.protocol==='https:'&&/^http:/i.test(S.base)&&!S.px)
-    throw new Error('Il server del provider usa http e questa pagina è in https: inserisci l\'indirizzo del ponte.');
-  const info=await api('');
+
+/* ---------- Server che cambia: lo legge dall'indirizzo DNS del provider ---------- */
+async function dnsCandidates(){
+  if(!S.dns)return [];
+  let d;
+  try{
+    const r=await fetch(PA(S.dns),{cache:'no-store'});
+    if(!r.ok)throw 0;
+    d=await r.json();
+  }catch(e){
+    throw new Error(S.px?'Non riesco a leggere l\'indirizzo DNS, nemmeno passando dal ponte.':'Non riesco a leggere l\'indirizzo DNS: il sito non permette la lettura diretta, inserisci l\'indirizzo del ponte.');
+  }
+  const out=[];
+  for(const s of (d&&d.servers)||[]){
+    const h=String((s&&typeof s==='object'?s.dns||s.url:s)||'').trim().replace(/\/+$/,'');
+    if(!/^https?:\/\//i.test(h))continue;
+    /* Spesso il server risponde anche in https: lo provo prima, così non serve il ponte */
+    if(/^http:/i.test(h))out.push(h.replace(/^http:/i,'https:'));
+    out.push(h);
+  }
+  return [...new Set(out)];
+}
+async function tryBase(b){
+  S.base=b.replace(/\/+$/,'');
+  if(mixed(S.base))throw new Error('Il server del provider usa http e questa pagina è in https: inserisci l\'indirizzo del ponte.');
+  const info=await api('','',true);
   if(!info||!info.user_info||String(info.user_info.auth)!=='1')throw new Error('Username o password non validi.');
+}
+function saveBase(){
+  const x=store.get('xt');
+  if(x&&(x.base!==S.base||x.home!==S.home)){x.base=S.base;x.home=S.home;store.set('xt',x)}
+  $('#srv').value=S.base;
+}
+let refreshing=null;
+function refreshBase(){
+  if(S.mode!=='x'||!S.dns)return Promise.resolve(false);
+  if(!refreshing)refreshing=(async()=>{
+    const old=S.base;
+    let list;try{list=await dnsCandidates()}catch(e){return false}
+    for(const b of list){
+      if(b===old)continue;
+      try{await tryBase(b);saveBase();return true}catch(e){}
+    }
+    S.base=old;return false;
+  })().finally(()=>{refreshing=null});
+  return refreshing;
+}
+async function loginXtream(base,u,p,px,dns,home){
+  S.mode='x';S.u=u;S.p=p;S.px=(px||'').trim();S.dns=(dns||'').trim();
+  const list=[];let last=null;
+  if(S.dns){try{list.push(...await dnsCandidates())}catch(e){last=e}}
+  if(base)list.push(base.trim().replace(/\/+$/,''));
+  const todo=[...new Set(list)];
+  if(!todo.length)throw last||new Error('Inserisci il server oppure l\'indirizzo DNS del provider.');
+  for(const b of todo){
+    try{
+      await tryBase(b);
+      /* "home" resta fisso anche se il server cambia, così preferiti e ordine delle categorie non si perdono */
+      S.home=home||S.base;return;
+    }catch(e){last=e}
+  }
+  throw last;
 }
 async function loadTab(t){
   if(S.items[t])return;
@@ -220,7 +287,7 @@ function parseM3U(txt){
 }
 
 /* ---------- Preferiti (canali, film e serie, salvati su questo dispositivo) ---------- */
-const acct=()=>S.mode==='x'?S.base+'|'+S.u:'m3u';
+const acct=()=>S.mode==='x'?(S.home||S.base)+'|'+S.u:'m3u';
 const favStore=()=>'favs:'+acct();
 const typeOf=i=>i.type||'live';
 const favKey=i=>i.url?'u:'+i.url:'x:'+(typeOf(i)==='live'?'':typeOf(i)+':')+i.id;
@@ -335,11 +402,22 @@ async function openSeries(it){
 }
 
 let hls=null;
-function play(title,url){
-  const v=$('#vid');$('#perr').textContent='';$('#ptitle').textContent=title;$('#player').hidden=false;
+let playId=0;
+function play(title,raw,retried){
+  const v=$('#vid'),id=++playId;$('#perr').textContent='';$('#ptitle').textContent=title;$('#player').hidden=false;
   if(hls){hls.destroy();hls=null}
-  url=P(url);
-  const fail=()=>{$('#perr').textContent=/\.mkv(\?|$)/i.test(url)?'Formato MKV: il browser spesso non lo riproduce.':'Impossibile riprodurre questo contenuto.'};
+  const url=P(raw);let failed=false;
+  const fail=async()=>{
+    if(failed||id!==playId)return;failed=true;
+    /* Se il provider ha cambiato server, riprendo lo stesso contenuto da quello nuovo */
+    const old=S.base;
+    if(!retried&&S.mode==='x'&&S.dns&&raw.startsWith(old+'/')){
+      $('#perr').textContent='Cerco il server aggiornato…';
+      if(await refreshBase()&&id===playId)return play(title,S.base+raw.slice(old.length),true);
+      if(id!==playId)return;
+    }
+    $('#perr').textContent=/\.mkv(\?|$)/i.test(url)?'Formato MKV: il browser spesso non lo riproduce.':'Impossibile riprodurre questo contenuto.';
+  };
   v.onerror=fail;
   if(/\.m3u8(\?|$)/i.test(url)&&window.Hls&&Hls.isSupported()){
     hls=new Hls();hls.loadSource(url);hls.attachMedia(v);
@@ -354,7 +432,7 @@ function setMini(on){
 function stop(){
   const v=$('#vid');
   if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{});
-  v.pause();if(hls){hls.destroy();hls=null}v.removeAttribute('src');v.load();
+  playId++;v.onerror=null;v.pause();if(hls){hls.destroy();hls=null}v.removeAttribute('src');v.load();
   $('#player').hidden=true;setMini(false);
 }
 
@@ -366,10 +444,15 @@ function enterApp(){$('#login').hidden=true;$('#app').hidden=false;
 }
 $('#lf').addEventListener('submit',async e=>{
   e.preventDefault();$('#lerr').textContent='';$('#go').disabled=true;$('#go').textContent='Connessione…';
-  const base=$('#srv').value.trim(),u=$('#usr').value.trim(),p=$('#pwd').value,px=$('#px').value.trim();
+  const base=$('#srv').value.trim(),u=$('#usr').value.trim(),p=$('#pwd').value,px=$('#px').value.trim(),dns=$('#dns').value.trim();
+  const prev=store.get('xt');
+  /* Stesso account di prima: tengo la stessa chiave per preferiti e categorie */
+  const home=prev&&prev.u===u?prev.home||prev.base:'';
   try{
-    await loginXtream(base,u,p,px);
-    if($('#rem').checked)store.set('xt',{base,u,p,px});else store.del('xt');
+    if(!u||!p)throw new Error('Inserisci username e password.');
+    await loginXtream(base,u,p,px,dns,home);
+    $('#srv').value=S.base;
+    if($('#rem').checked)store.set('xt',{base:S.base,u,p,px,dns,home:S.home});else store.del('xt');
     enterApp();
   }catch(err){$('#lerr').textContent=err.message}
   $('#go').disabled=false;$('#go').textContent='Connetti';
@@ -424,8 +507,8 @@ $('#out').onclick=()=>{store.del('xt');S.items={};S.cats={};$('#app').hidden=tru
 
 /* Accesso automatico se salvato */
 const saved=store.get('xt');
-if(saved){$('#srv').value=saved.base;$('#usr').value=saved.u;$('#pwd').value=saved.p;$('#px').value=saved.px||'';
-  loginXtream(saved.base,saved.u,saved.p,saved.px).then(enterApp).catch(e=>{$('#lerr').textContent=e.message});
+if(saved){$('#srv').value=saved.base||'';$('#usr').value=saved.u;$('#pwd').value=saved.p;$('#px').value=saved.px||'';$('#dns').value=saved.dns||'';
+  loginXtream(saved.base,saved.u,saved.p,saved.px,saved.dns,saved.home||saved.base).then(()=>{saveBase();enterApp()}).catch(e=>{$('#lerr').textContent=e.message});
 }
 </script>
 </body>
