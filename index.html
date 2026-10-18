@@ -84,7 +84,12 @@ main.nocats{grid-template-columns:1fr;grid-template-rows:1fr}
 #series{position:fixed;inset:0;background:var(--bg);overflow:auto;padding:16px;z-index:5}
 #series h2{margin:8px 0 12px}
 .seasons{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-.ep{display:block;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.ep{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.ep .mk{margin-left:auto;color:var(--accent);font-size:.9em;flex:none}
+.ep.seen{color:var(--mute)}
+.open .sub{display:block;color:var(--accent);font-size:.85em;margin-top:2px}
+.btn.resume{display:block;width:100%;text-align:left;margin:0 0 12px}
+.btn.resume small{font-weight:400;opacity:.8}
 
 /* Player */
 #player{position:fixed;inset:0;background:#000;z-index:10;display:grid;grid-template-rows:auto 1fr}
@@ -397,16 +402,20 @@ function filtered(){
 }
 function card(i,n,live,favs){
   const on=favs.has(favKey(i));
-  return `<div class="item"><button class="open" data-n="${n}"><div class="poster" ${i.logo?`style="background-image:url('${esc(P(i.logo)).replace(/'/g,'%27')}')"`:''}></div><span>${esc(i.name)}</span></button><button class="fav" data-f="${n}" aria-pressed="${on}" aria-label="${on?'Togli dai':'Aggiungi ai'} preferiti">${on?'★':'☆'}</button></div>`;
+  return `<div class="item"><button class="open" data-n="${n}"><div class="poster" ${i.logo?`style="background-image:url('${esc(P(i.logo)).replace(/'/g,'%27')}')"`:''}></div><span>${esc(i.name)}${i.sub?`<small class="sub">${esc(i.sub)}</small>`:''}</span></button><button class="fav" data-f="${n}" aria-pressed="${on}" aria-label="${on?'Togli dai':'Aggiungi ai'} preferiti">${on?'★':'☆'}</button></div>`;
 }
 function renderList(){
   const favs=new Set(getFavs().map(favKey)),L=$('#list');
+  /* "Continua a guardare": le serie lasciate a metà, in cima a Preferiti e Serie TV */
+  const cont=S.mode==='x'&&!S.q&&(S.tab==='fav'||(S.tab==='series'&&S.cat==='*'))?continueList():[];
+  const contHtml=(items)=>cont.length?`<h3 class="sect">Continua a guardare <small>${cont.length}</small></h3><div class="grid">${cont.map(i=>{items.push(i);return card(i,items.length-1,false,favs)}).join('')}</div>`:'';
+  L._off=0;
   if(S.tab==='fav'){
-    if(!(S.items.fav||[]).length){
+    if(!(S.items.fav||[]).length&&!cont.length){
       L.innerHTML=`<p class="empty">Nessun preferito. ${document.body.classList.contains('tv')?'Tieni premuto OK':'Tocca la stella ☆'} su un canale, un film o una serie per aggiungerlo qui.</p>`;
       L._items=[];return;
     }
-    const all=filtered(),items=[];let html='';
+    const all=filtered(),items=[];let html=contHtml(items);
     for(const [t,label] of [['live','Canali'],['vod','Film'],['series','Serie TV']]){
       const g=all.filter(i=>typeOf(i)===t);if(!g.length)continue;
       html+=`<h3 class="sect">${label} <small>${g.length}</small></h3><div class="grid ${t==='live'?'live':''}">${g.map(i=>{items.push(i);return card(i,items.length-1,t==='live',favs)}).join('')}</div>`;
@@ -415,10 +424,44 @@ function renderList(){
   }
   const all=filtered(),shown=all.slice(0,S.limit),live=S.tab==='live';
   const label={live:'canali',vod:'film',series:'serie'}[S.tab];
-  L.innerHTML=`<p class="status">${all.length} ${label}</p>
-  <div class="grid ${live?'live':''}">${shown.map((i,n)=>card(i,n,live,favs)).join('')}</div>
+  const items=[],top=contHtml(items),off=items.length;
+  L.innerHTML=`${top}${top?`<h3 class="sect">Tutte le serie <small>${all.length}</small></h3>`:`<p class="status">${all.length} ${label}</p>`}
+  <div class="grid ${live?'live':''}">${shown.map((i,n)=>card(i,n+off,live,favs)).join('')}</div>
   ${all.length>S.limit?'<button class="btn ghost more" id="more">Mostra altri</button>':''}`;
-  L._items=shown;
+  L._items=items.concat(shown);L._off=off;
+}
+
+/* ---------- Serie: ricorda episodio e punto di arrivo (salvati su questo dispositivo) ---------- */
+const progKey=()=>'prog:'+acct();
+const getProg=()=>store.get(progKey())||{};
+const fmtT=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${x}`:`${m}:${x}`};
+function nextEp(eps,seasons,s,id){
+  const L=eps[s]||[],i=L.findIndex(e=>String(e.id)===String(id));
+  if(i>=0&&i+1<L.length)return{s,e:L[i+1]};
+  for(let k=seasons.indexOf(s)+1;k>0&&k<seasons.length;k++)if((eps[seasons[k]]||[]).length)return{s:seasons[k],e:eps[seasons[k]][0]};
+  return null;
+}
+/* Da dove ripartire: l'episodio lasciato a metà, oppure il successivo a quello finito */
+function resumeTarget(sid,eps,seasons){
+  const p=getProg()[sid],L=p&&p.last;if(!L)return null;
+  if(!L.done){const e=(eps[L.s]||[]).find(x=>String(x.id)===String(L.epId));if(e)return{s:L.s,e,pos:L.pos||0,next:false}}
+  const n=nextEp(eps,seasons,L.s,L.epId);return n?{...n,pos:0,next:true}:null;
+}
+/* Salva a che punto sei; un episodio conta come visto quando mancano meno di 2 minuti (titoli di coda) o hai superato il 92% */
+function saveProg(m,pos,dur){
+  if(!m||!(dur>0)||!(pos>=0))return;
+  const all=getProg(),p=all[m.sid]||{w:{}};p.w=p.w||{};
+  const done=pos>=dur*0.92||dur-pos<120;
+  if(done)p.w[m.epId]=1;
+  p.info=m.info;
+  p.last={s:m.s,epId:m.epId,num:m.num,pos:done?0:Math.floor(pos),dur:Math.floor(dur),done,t:Date.now()};
+  p.fin=done&&!m.hasNext;
+  all[m.sid]=p;store.set(progKey(),all);
+}
+/* Serie da continuare, dalla più recente */
+function continueList(){
+  return Object.values(getProg()).filter(p=>p.info&&p.last&&!p.fin).sort((a,b)=>b.last.t-a.last.t).map(p=>({...p.info,type:'series',cat:'*',
+    sub:`S${p.last.s}E${p.last.num}${p.last.done?' ✓':p.last.pos>5?' · '+fmtT(p.last.pos):''}`}));
 }
 
 async function openSeries(it){
@@ -428,45 +471,81 @@ async function openSeries(it){
     const d=await api('get_series_info','&series_id='+it.id);
     const eps=d.episodes||{};const seasons=Object.keys(eps).sort((a,b)=>a-b);
     if(!seasons.length)throw new Error('Nessun episodio disponibile.');
+    const info={id:it.id,name:it.name,logo:it.logo};
+    const epUrl=e=>`${S.base}/series/${encodeURIComponent(S.u)}/${encodeURIComponent(S.p)}/${e.id}.${e.container_extension||'mp4'}`;
+    const playEp=(s,e,start)=>play(`${it.name} · S${s}E${e.episode_num}`,epUrl(e),false,
+      {sid:it.id,s,epId:e.id,num:e.episode_num,info,hasNext:!!nextEp(eps,seasons,s,e.id)},start||0);
+    let cur;
     const draw=s=>{
+      cur=s;
+      const p=getProg()[it.id]||{},w=p.w||{},L=p.last,r=resumeTarget(it.id,eps,seasons);
+      const rlabel=r&&`${r.next?'▶ Prossimo':'▶ Riprendi'} S${esc(r.s)}E${esc(r.e.episode_num)} · ${esc(r.e.title||'Episodio')}${r.pos>5?` <small>da ${fmtT(r.pos)}</small>`:''}`;
       box.innerHTML=`<div class="row"><button class="btn ghost" id="sback">Indietro</button></div>
       <h2>${esc(it.name)}</h2>
+      ${r?`<button class="btn resume" id="sresume">${rlabel}</button>`:(L?'<p class="status">Hai visto tutti gli episodi ✓</p>':'')}
       <div class="seasons">${seasons.map(x=>`<button class="tab" data-s="${x}" aria-pressed="${x===s}">Stagione ${esc(x)}</button>`).join('')}</div>
-      ${eps[s].map((e,n)=>`<button class="ep" data-e="${n}">${esc(e.episode_num)}. ${esc(e.title||'Episodio')}</button>`).join('')}`;
+      ${eps[s].map((e,n)=>{
+        const half=L&&!L.done&&String(L.epId)===String(e.id)&&L.pos>5;
+        const mark=w[e.id]?'<span class="mk">✓</span>':half?`<span class="mk">${fmtT(L.pos)}</span>`:'';
+        return `<button class="ep${w[e.id]?' seen':''}" data-e="${n}">${esc(e.episode_num)}. ${esc(e.title||'Episodio')}${mark}</button>`}).join('')}`;
       box.onclick=ev=>{
         const b=ev.target.closest('button');if(!b)return;
         if(b.id==='sback'){battvBack();return}
+        if(b.id==='sresume'){const t=resumeTarget(it.id,eps,seasons);if(t)playEp(t.s,t.e,t.pos);return}
         if(b.dataset.s){draw(b.dataset.s);focusEl(box.querySelector(`[data-s="${CSS.escape(b.dataset.s)}"]`));return}
-        if(b.dataset.e){const e=eps[s][b.dataset.e];play(`${it.name} · S${s}E${e.episode_num}`,`${S.base}/series/${encodeURIComponent(S.u)}/${encodeURIComponent(S.p)}/${e.id}.${e.container_extension||'mp4'}`)}
+        if(b.dataset.e){
+          /* L'episodio lasciato a metà riparte da dove eri, gli altri dall'inizio */
+          const e=eps[cur][b.dataset.e],q=getProg()[it.id],L2=q&&q.last;
+          playEp(cur,e,L2&&!L2.done&&String(L2.epId)===String(e.id)?L2.pos:0);
+        }
       };
     };
-    draw(seasons[0]);focusEl(box.querySelector('.ep'));
+    /* Dopo la visione ridisegna (✓ e Riprendi aggiornati) e rimette il riquadro su Riprendi */
+    S.seriesView={sid:it.id,redraw(){const r=resumeTarget(it.id,eps,seasons);draw(r?r.s:cur);focusEl($('#sresume')||box.querySelector('.ep'))}};
+    const r=resumeTarget(it.id,eps,seasons);
+    draw(r?r.s:seasons[0]);focusEl($('#sresume')||box.querySelector('.ep'));
   }catch(e){box.innerHTML=`<button class="btn ghost" onclick="battvBack()">Indietro</button><p class="status" style="color:var(--bad)">${esc(e.message)}</p>`;focusEl(box.querySelector('button'))}
+}
+/* Finita una visione: se la serie è aperta la aggiorna, altrimenti aggiorna la lista (Continua a guardare) */
+function afterPlay(){
+  if(!$('#series').hidden&&S.seriesView){S.seriesView.redraw();return true}
+  if(!$('#app').hidden&&(S.tab==='fav'||S.tab==='series')&&S.playing&&S.playing.meta){
+    if(S.tab==='fav')S.items.fav=getFavs();renderList();
+  }
+  return false;
 }
 
 let hls=null;
 let playId=0;
-function play(title,raw,retried){
+/* meta: dati dell'episodio, per ricordare il punto di arrivo; start: secondi da cui partire */
+function play(title,raw,retried,meta,start){
   if(!retried||!S.lastFocus||!document.contains(S.lastFocus))S.lastFocus=document.activeElement;
+  if(!retried)S.playing={title,raw,meta:meta||null};
+  start=start||0;
   /* Nell'app il video va al player nativo, che legge anche MKV e audio AC3 */
-  if(NATIVE){S.lastPlay={title,raw,retried:!!retried};BatTVNative.play(raw,title);return}
+  if(NATIVE){S.lastPlay={title,raw,retried:!!retried};BatTVNative.play(raw,title,Math.floor(start*1000));return}
   const v=$('#vid'),id=++playId;$('#perr').textContent='';$('#ptitle').textContent=title;$('#player').hidden=false;
   if(hls){hls.destroy();hls=null}
   const url=P(raw);let failed=false;
   const fail=async()=>{
     if(failed||id!==playId)return;failed=true;
     /* Se il provider ha cambiato server, riprendo lo stesso contenuto da quello nuovo */
-    const old=S.base;
+    const old=S.base,at=v.currentTime||start;
     if(!retried&&S.mode==='x'&&S.dns&&raw.startsWith(old+'/')){
       $('#perr').textContent='Cerco il server aggiornato…';
-      if(await refreshBase()&&id===playId)return play(title,S.base+raw.slice(old.length),true);
+      if(await refreshBase()&&id===playId)return play(title,S.base+raw.slice(old.length),true,null,at);
       if(id!==playId)return;
     }
     $('#perr').textContent=/\.mkv(\?|$)/i.test(url)?'Formato MKV: il browser spesso non lo riproduce.':'Impossibile riprodurre questo contenuto.';
   };
   v.onerror=fail;
+  /* Riparte dal punto salvato e lo aggiorna ogni 15 secondi e alla fine */
+  const m=S.playing&&S.playing.meta;let saved=0;
+  v.onloadedmetadata=()=>{if(start>0&&id===playId&&!(v.duration>0&&start>=v.duration-5))v.currentTime=start};
+  v.ontimeupdate=()=>{if(m&&id===playId&&Date.now()-saved>15000&&v.currentTime>0){saved=Date.now();saveProg(m,v.currentTime,v.duration)}};
+  v.onended=()=>{if(m&&id===playId)saveProg(m,v.duration,v.duration)};
   if(/\.m3u8(\?|$)/i.test(url)&&window.Hls&&Hls.isSupported()){
-    hls=new Hls();hls.loadSource(url);hls.attachMedia(v);
+    hls=new Hls(start>0?{startPosition:start}:{});hls.loadSource(url);hls.attachMedia(v);
     hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)fail()});
   }else v.src=url;
   v.play().catch(()=>{});
@@ -476,9 +555,10 @@ function setMini(on){
   $('#pmini').textContent=on?'Ingrandisci':'Riduci';
 }
 function stop(){
-  const v=$('#vid');
+  const v=$('#vid'),m=S.playing&&S.playing.meta;
+  if(m&&v.currentTime>0&&v.duration>0)saveProg(m,v.currentTime,v.duration);
   if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{});
-  playId++;v.onerror=null;v.pause();if(hls){hls.destroy();hls=null}v.removeAttribute('src');v.load();
+  playId++;v.onerror=v.ontimeupdate=v.onended=v.onloadedmetadata=null;v.pause();if(hls){hls.destroy();hls=null}v.removeAttribute('src');v.load();
   $('#player').hidden=true;setMini(false);
 }
 
@@ -525,7 +605,7 @@ document.querySelectorAll('.tab[data-t]').forEach(b=>b.onclick=()=>show(b.datase
   focusEl(C(`.cat[data-c="${CSS.escape(S.cat)}"]`))};
 let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{S.q=e.target.value;S.limit=120;renderList()},200)};
 $('#list').onclick=e=>{
-  if(e.target.id==='more'){const n=S.limit;S.limit+=120;renderList();focusEl($('#list').querySelector(`.open[data-n="${n}"]`));return}
+  if(e.target.id==='more'){const n=S.limit;S.limit+=120;renderList();focusEl($('#list').querySelector(`.open[data-n="${n+($('#list')._off||0)}"]`));return}
   const fb=e.target.closest('.fav');
   if(fb){
     const it=$('#list')._items[fb.dataset.f];toggleFav(it);
@@ -539,7 +619,7 @@ $('#list').onclick=e=>{
   if(t==='series')return openSeries(it);
   play(it.name,xUrl(t==='vod'?'movie':'live',it));
 };
-$('#pclose').onclick=stop;
+$('#pclose').onclick=()=>{stop();afterPlay()};
 $('#pmini').onclick=()=>setMini(!$('#player').classList.contains('mini'));
 $('#pside').onclick=()=>$('#player').classList.toggle('left');
 /* Picture in Picture del browser, solo dove è supportato */
@@ -606,8 +686,19 @@ function moveFocus(dir){
 function backTo(e){if(e&&document.contains(e)&&e.offsetParent!==null)focusEl(e);else moveFocus('down')}
 /* Indietro: chiude quello che è aperto, poi risale lista → categorie → sezioni. Restituisce false se non c'è più niente da chiudere. */
 window.battvBack=function(){
-  if(!$('#player').hidden){stop();backTo(S.lastFocus);return true}
-  if(!$('#series').hidden){$('#series').hidden=true;backTo(S.lastFocus);return true}
+  if(!$('#player').hidden){stop();if(!afterPlay())backTo(S.lastFocus);return true}
+  if(!$('#series').hidden){
+    $('#series').hidden=true;
+    const sid=S.seriesView&&S.seriesView.sid;S.seriesView=null;
+    /* Aggiorna "Continua a guardare" e rimette il riquadro sulla stessa serie */
+    if(sid!=null&&!$('#app').hidden&&(S.tab==='fav'||S.tab==='series')){
+      if(S.tab==='fav')S.items.fav=getFavs();
+      renderList();
+      const n=($('#list')._items||[]).findIndex(i=>typeOf(i)==='series'&&String(i.id)===String(sid));
+      if(n>=0)return focusEl($('#list').querySelector(`.open[data-n="${n}"]`));
+    }
+    backTo(S.lastFocus);return true;
+  }
   if(S.editCats){S.editCats=false;renderCats();renderList();focusEl($('#cats .cat[aria-pressed=true]'));return true}
   if(!$('#app').hidden){
     const t=document.activeElement;
@@ -631,17 +722,20 @@ document.addEventListener('keydown',e=>{
 if(NATIVE){
   document.body.classList.add('tv');
   /* Il player nativo segnala un errore: se il provider ha cambiato server riprovo da quello nuovo */
-  window.battvNativeError=async()=>{
+  /* pos e dur arrivano dal player nativo in millisecondi (dur negativa se è una diretta) */
+  const nativeSave=(pos,dur)=>{const m=S.playing&&S.playing.meta;if(m&&dur>0&&pos>0)saveProg(m,pos/1000,dur/1000)};
+  window.battvNativeError=async(pos,dur)=>{
     const lp=S.lastPlay;if(!lp)return;
+    nativeSave(pos,dur);
     const old=S.base;
     if(!lp.retried&&S.mode==='x'&&S.dns&&lp.raw.startsWith(old+'/')){
       BatTVNative.toast('Cerco il server aggiornato…');
-      if(await refreshBase())return play(lp.title,S.base+lp.raw.slice(old.length),true);
+      if(await refreshBase())return play(lp.title,S.base+lp.raw.slice(old.length),true,null,(pos||0)/1000);
     }
     BatTVNative.toast('Impossibile riprodurre questo contenuto.');
-    backTo(S.lastFocus);
+    if(!afterPlay())backTo(S.lastFocus);
   };
-  window.battvNativeClosed=()=>backTo(S.lastFocus);
+  window.battvNativeClosed=(pos,dur)=>{nativeSave(pos,dur);if(!afterPlay())backTo(S.lastFocus)};
 }
 
 /* Accesso automatico se salvato */

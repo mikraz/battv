@@ -36,7 +36,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val playerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        js(if (r.resultCode == PlayerActivity.RESULT_ERROR) "window.battvNativeError&&battvNativeError()" else "window.battvNativeClosed&&battvNativeClosed()")
+        // Il player restituisce il punto raggiunto e la durata (in ms), così la pagina ricorda l'episodio
+        val pos = r.data?.getLongExtra(PlayerActivity.EXTRA_POS, 0L) ?: 0L
+        val dur = r.data?.getLongExtra(PlayerActivity.EXTRA_DUR, -1L) ?: -1L
+        val fn = if (r.resultCode == PlayerActivity.RESULT_ERROR) "battvNativeError" else "battvNativeClosed"
+        js("window.$fn&&$fn($pos,$dur)")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -133,11 +137,12 @@ class MainActivity : ComponentActivity() {
     /** Funzioni che la pagina può chiamare come window.BatTVNative.* */
     inner class Bridge {
         @JavascriptInterface
-        fun play(url: String, title: String) = runOnUiThread {
+        fun play(url: String, title: String, startMs: Double) = runOnUiThread {
             playerLauncher.launch(
                 Intent(this@MainActivity, PlayerActivity::class.java)
                     .putExtra(PlayerActivity.EXTRA_URL, url)
                     .putExtra(PlayerActivity.EXTRA_TITLE, title)
+                    .putExtra(PlayerActivity.EXTRA_START, startMs.toLong().coerceAtLeast(0L))
             )
         }
 

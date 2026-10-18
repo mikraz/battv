@@ -1,10 +1,13 @@
 package io.github.mikraz.battv
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -17,18 +20,27 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 
-/** Player a tutto schermo con ExoPlayer: legge HLS, TS, MP4 e MKV. Indietro chiude e torna alla lista. */
+/**
+ * Player a tutto schermo con ExoPlayer: legge HLS, TS, MP4 e MKV. Indietro chiude e torna alla lista.
+ * Parte da EXTRA_START e alla chiusura restituisce il punto raggiunto e la durata, per riprendere gli episodi.
+ */
 @OptIn(UnstableApi::class)
 class PlayerActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_START = "start"
+        const val EXTRA_POS = "pos"
+        const val EXTRA_DUR = "dur"
         const val RESULT_ERROR = 2
     }
 
     private var player: ExoPlayer? = null
     private lateinit var view: PlayerView
+    /** Punto raggiunto: serve se l'app va in secondo piano (tasto Home) e poi torna */
+    private var lastPos = -1L
+    private var lastDur = -1L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +54,9 @@ class PlayerActivity : ComponentActivity() {
         intent.getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() }?.let {
             Toast.makeText(this, it, Toast.LENGTH_SHORT).show()
         }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = close(RESULT_OK)
+        })
     }
 
     override fun onStart() {
@@ -64,11 +79,19 @@ class PlayerActivity : ComponentActivity() {
                     p.seekToDefaultPosition(); p.prepare(); return
                 }
                 // Altrimenti torna alla pagina, che prova il server aggiornato dal DNS
-                setResult(RESULT_ERROR)
-                finish()
+                close(RESULT_ERROR)
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                // Episodio o film finito: torna alla lista segnandolo come visto
+                if (state == Player.STATE_ENDED && p.duration != C.TIME_UNSET) {
+                    lastPos = p.duration; lastDur = p.duration
+                    close(RESULT_OK)
+                }
             }
         })
-        p.setMediaItem(item)
+        val start = if (lastPos >= 0) lastPos else intent.getLongExtra(EXTRA_START, 0L)
+        if (start > 0) p.setMediaItem(item, start) else p.setMediaItem(item)
         p.playWhenReady = true
         p.prepare()
         view.player = p
@@ -76,10 +99,26 @@ class PlayerActivity : ComponentActivity() {
         player = p
     }
 
+    /** Chiude restituendo alla pagina il punto raggiunto */
+    private fun close(code: Int) {
+        player?.let { p ->
+            if (p.playbackState != Player.STATE_ENDED) lastPos = p.currentPosition
+            if (p.duration != C.TIME_UNSET) lastDur = p.duration
+        }
+        setResult(code, Intent().putExtra(EXTRA_POS, lastPos.coerceAtLeast(0L)).putExtra(EXTRA_DUR, lastDur))
+        finish()
+    }
+
     override fun onStop() {
         super.onStop()
-        view.player = null
-        player?.release()
+        player?.let { p ->
+            if (!isFinishing) {
+                lastPos = p.currentPosition
+                if (p.duration != C.TIME_UNSET) lastDur = p.duration
+            }
+            view.player = null
+            p.release()
+        }
         player = null
     }
 }

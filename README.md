@@ -8,10 +8,11 @@ Player IPTV leggero in un solo file HTML, pensato per il browser della Tesla e p
 - Sezioni Live, Film e Serie TV con le categorie del provider
 - Ricerca, stagioni ed episodi per le serie
 - Preferiti per canali, film e serie in una schermata dedicata
+- Serie TV: ricorda episodio e punto in cui ti sei fermato, con **Riprendi** / **Prossimo**, spunta sugli episodi visti e la sezione **Continua a guardare** in Preferiti e Serie TV
 - Categorie riordinabili e nascondibili
 - Mini player per fare zapping mentre sfogli, più Picture in Picture dove il browser lo supporta
 
-Preferiti, ordine e categorie nascoste sono salvati nel browser di ciascun dispositivo.
+Preferiti, progressi delle serie, ordine e categorie nascoste sono salvati nel browser di ciascun dispositivo.
 
 ## File
 
