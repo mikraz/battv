@@ -83,6 +83,14 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) web.loadUrl("https://appassets.androidplatform.net/assets/index.html")
         else web.restoreState(savedInstanceState)
         web.requestFocus()
+
+        // Controlla se su GitHub c'è una versione più nuova dell'app
+        Updater.check(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Updater.resume(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

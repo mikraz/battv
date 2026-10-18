@@ -45,7 +45,9 @@ Non pubblicare in questo repository l'indirizzo DNS o i dati del tuo provider: s
 
 La cartella `android/` contiene un'app che mostra lo stesso `index.html` sul televisore, con in più:
 
-- **telecomando**: frecce per spostarsi, OK per scegliere, Indietro per tornare (Indietro due volte per uscire);
+- **telecomando**: frecce per spostarsi, OK per scegliere, OK tenuto premuto per aggiungere o togliere dai preferiti, Indietro per tornare (Indietro due volte per uscire);
+- **vista compatta**: testo e spaziature più piccoli per vedere più canali e categorie per schermata;
+- **aggiornamenti**: all'avvio controlla le Release di GitHub e, se c'è una versione nuova, chiede se installarla;
 - **player nativo ExoPlayer**: legge HLS, TS, MP4 e MKV, con audio AC3 se il box lo supporta;
 - **ponte interno**: l'app legge DNS e server in http da sola, quindi il campo Ponte non serve e non compare.
 

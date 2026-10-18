@@ -56,6 +56,7 @@ tasks.named("preBuild") { dependsOn(copyWeb) }
 dependencies {
     val media3 = "1.5.1"
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")

@@ -111,7 +111,36 @@ body.tv .item:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(-
 .fav:focus-visible{outline:3px solid var(--star);outline-offset:-3px;border-radius:999px}
 /* App Android TV: niente ponte, niente file M3U, player nativo */
 body.tv .webonly{display:none!important}
-body.tv{font-size:18px}
+/* Vista TV compatta: testo e spaziature più piccoli per vedere più categorie e canali per schermata */
+body.tv{font-size:13px}
+body.tv header{padding:6px 12px;gap:8px}
+body.tv .tab{padding:5px 12px}
+body.tv header input,body.tv header .btn{padding:6px 10px}
+body.tv main{grid-template-columns:190px 1fr}
+body.tv #cats{padding:6px}
+body.tv .cat,body.tv .cattool{padding:5px 10px;border-radius:6px}
+body.tv #list{padding:10px}
+body.tv .status{margin-bottom:8px}
+body.tv .grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px}
+body.tv .grid.live{grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:6px}
+body.tv .item{border-radius:8px}
+body.tv .live .open{padding:4px 6px;gap:8px}
+body.tv .live .poster{width:30px;border-radius:4px}
+body.tv .open span{padding:5px 7px;font-size:12px}
+body.tv .live .open span{padding:0}
+body.tv .fav{padding:0 8px;font-size:17px;pointer-events:none}
+/* Sulla TV la stella è solo un segno: compare quando l'elemento è nei preferiti */
+body.tv .fav[aria-pressed=false]{visibility:hidden}
+body.tv .grid:not(.live) .fav{width:30px;height:30px;top:4px;right:4px}
+body.tv .sect{margin:12px 0 6px;font-size:15px}
+body.tv .crow{padding:6px 2px}
+body.tv .crow span{font-size:13px}
+body.tv .crow button{width:32px;height:32px}
+body.tv #series{padding:10px}
+body.tv .ep{padding:7px 12px;margin-bottom:5px;border-radius:8px}
+body.tv .box{padding:18px;gap:10px}
+body.tv input[type=text],body.tv input[type=password],body.tv input[type=url]{padding:8px 10px}
+body.tv .btn{padding:9px 14px}
 
 @media (max-width:700px){
   main{grid-template-columns:1fr;grid-template-rows:auto 1fr}
@@ -374,7 +403,7 @@ function renderList(){
   const favs=new Set(getFavs().map(favKey)),L=$('#list');
   if(S.tab==='fav'){
     if(!(S.items.fav||[]).length){
-      L.innerHTML='<p class="empty">Nessun preferito. Tocca la stella ☆ su un canale, un film o una serie per aggiungerlo qui.</p>';
+      L.innerHTML=`<p class="empty">Nessun preferito. ${document.body.classList.contains('tv')?'Tieni premuto OK':'Tocca la stella ☆'} su un canale, un film o una serie per aggiungerlo qui.</p>`;
       L._items=[];return;
     }
     const all=filtered(),items=[];let html='';
@@ -500,7 +529,7 @@ $('#list').onclick=e=>{
   const fb=e.target.closest('.fav');
   if(fb){
     const it=$('#list')._items[fb.dataset.f];toggleFav(it);
-    if(S.tab==='fav'){const n=+fb.dataset.f;S.items.fav=getFavs();renderList();const fs=$('#list').querySelectorAll('.fav');focusEl(fs[Math.min(n,fs.length-1)]||$('.tab[data-t=fav]'));return}
+    if(S.tab==='fav'){const n=+fb.dataset.f;S.items.fav=getFavs();renderList();const fs=$('#list').querySelectorAll(document.body.classList.contains('tv')?'.open':'.fav');focusEl(fs[Math.min(n,fs.length-1)]||$('.tab[data-t=fav]'));return}
     const on=isFav(it);fb.setAttribute('aria-pressed',on);fb.textContent=on?'★':'☆';
     fb.setAttribute('aria-label',(on?'Togli dai':'Aggiungi ai')+' preferiti');return;
   }
@@ -527,8 +556,32 @@ $('#out').onclick=()=>{store.del('xt');S.items={};S.cats={};$('#app').hidden=tru
 /* ---------- Telecomando: frecce per spostarsi, OK per scegliere, Indietro per tornare ---------- */
 function focusables(){
   const pl=$('#player'),root=!pl.hidden&&!pl.classList.contains('mini')?pl:!$('#series').hidden?$('#series'):!$('#login').hidden?$('#login'):document.body;
-  return [...root.querySelectorAll('button,input:not([type=file]),video[controls]')].filter(e=>!e.disabled&&e.offsetParent!==null&&!e.closest('[hidden]'));
+  /* Sulla TV la stella non si raggiunge: i preferiti si fanno tenendo premuto OK */
+  const tv=document.body.classList.contains('tv');
+  return [...root.querySelectorAll('button,input:not([type=file]),video[controls]')].filter(e=>!e.disabled&&e.offsetParent!==null&&!e.closest('[hidden]')&&!(tv&&e.classList.contains('fav')));
 }
+/* TV: OK breve apre, OK tenuto premuto aggiunge o toglie dai preferiti */
+let hold=null;
+function holdFav(b){
+  const fb=b.parentNode.querySelector('.fav');if(!fb)return;
+  const it=$('#list')._items[b.dataset.n];fb.click();
+  const on=isFav(it),msg=on?'Aggiunto ai preferiti':'Tolto dai preferiti';
+  if(NATIVE)BatTVNative.toast(msg);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'||!document.body.classList.contains('tv'))return;
+  const b=document.activeElement;
+  if(!b||!b.classList.contains('open')||!$('#list').contains(b))return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(hold)return; /* il tasto tenuto giù ripete l'evento: lo ignoro */
+  hold={b,done:false,t:setTimeout(()=>{if(hold){hold.done=true;holdFav(hold.b)}},600)};
+},true);
+document.addEventListener('keyup',e=>{
+  if(e.key!=='Enter'||!hold)return;
+  e.preventDefault();
+  const h=hold;hold=null;clearTimeout(h.t);
+  if(!h.done&&document.contains(h.b))h.b.click();
+},true);
 function focusEl(e){if(!e)return false;e.focus({preventScroll:true});e.scrollIntoView({block:'nearest',inline:'nearest'});return true}
 function moveFocus(dir){
   const els=focusables(),cur=document.activeElement;
