@@ -18,6 +18,8 @@ Preferiti, ordine e categorie nascoste sono salvati nel browser di ciascun dispo
 | File | A cosa serve |
 |---|---|
 | `index.html` | Il player. Si pubblica così com'è su GitHub Pages o Netlify. |
+| `android/` | L'app per Android TV, che usa lo stesso `index.html`. |
+| `apk.html` | Link breve per scaricare l'ultima versione dell'app. |
 | `worker.js` | Il ponte https da mettere su Cloudflare Workers, necessario se il server del provider è in http o per leggere il DNS del provider. |
 
 ## Il ponte https
@@ -38,6 +40,29 @@ Alcuni provider cambiano spesso l'indirizzo del server e lo pubblicano in un fil
 All'accesso BatTV legge il server dal DNS, prova prima la versione https e poi quella http. Se durante l'uso il server smette di rispondere, o un canale non parte, rilegge il DNS, passa al server nuovo e riprova una volta. Preferiti, ordine e categorie nascoste restano legati all'account, non al server, quindi non si perdono quando il server cambia.
 
 Non pubblicare in questo repository l'indirizzo DNS o i dati del tuo provider: si inseriscono solo nel player.
+
+## App per Android TV
+
+La cartella `android/` contiene un'app che mostra lo stesso `index.html` sul televisore, con in più:
+
+- **telecomando**: frecce per spostarsi, OK per scegliere, Indietro per tornare (Indietro due volte per uscire);
+- **player nativo ExoPlayer**: legge HLS, TS, MP4 e MKV, con audio AC3 se il box lo supporta;
+- **ponte interno**: l'app legge DNS e server in http da sola, quindi il campo Ponte non serve e non compare.
+
+### Installazione
+
+Sul box installa l'app **Downloader** dal Play Store e apri `https://mikraz.github.io/battv/apk.html`: scarica l'ultima versione. La prima volta Android chiede di permettere a Downloader di installare app.
+
+### Compilazione automatica
+
+A ogni modifica di `index.html` o di `android/` GitHub compila l'APK e lo pubblica tra le Release. Servono due secret in *Settings → Secrets and variables → Actions*:
+
+| Secret | Contenuto |
+|---|---|
+| `BATTV_KEYSTORE_B64` | La chiave di firma `battv.keystore` codificata in base64 |
+| `BATTV_KEYSTORE_PASSWORD` | La sua password |
+
+La chiave deve restare sempre la stessa: Android accetta un aggiornamento solo se è firmato con la chiave della versione installata. Non metterla mai nel repository.
 
 ## Pubblicazione con GitHub Pages
 

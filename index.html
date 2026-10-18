@@ -103,6 +103,16 @@ video{width:100%;height:100%;min-height:0;background:#000}
 #player:not(.mini) #pside{display:none}
 body.has-mini #list{padding-bottom:300px}
 
+/* Telecomando: riquadro di selezione evidente anche da lontano */
+.cat:focus-visible,.tab:focus-visible,.ep:focus-visible,.crow button:focus-visible,.cattool:focus-visible{outline:3px solid var(--accent);outline-offset:2px;color:var(--fg)}
+body.tv .item:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent)}
+.item:has(:focus-visible){border-color:var(--accent);box-shadow:0 0 0 3px var(--accent)}
+.item .open:focus-visible{outline:0}
+.fav:focus-visible{outline:3px solid var(--star);outline-offset:-3px;border-radius:999px}
+/* App Android TV: niente ponte, niente file M3U, player nativo */
+body.tv .webonly{display:none!important}
+body.tv{font-size:18px}
+
 @media (max-width:700px){
   main{grid-template-columns:1fr;grid-template-rows:auto 1fr}
   #cats{display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
@@ -121,12 +131,12 @@ body.has-mini #list{padding-bottom:300px}
     <label>Indirizzo DNS del provider, per aggiornare il server da solo (facoltativo) <input id="dns" type="url" placeholder="https://sito.esempio/dns.php"></label>
     <label>Username <input id="usr" type="text" autocomplete="username" required></label>
     <label>Password <input id="pwd" type="password" autocomplete="current-password" required></label>
-    <label>Ponte https (se il server è in http) <input id="px" type="url" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
+    <label class="webonly">Ponte https (se il server è in http) <input id="px" type="url" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
     <label class="row" style="color:var(--fg)"><input id="rem" type="checkbox" checked> Ricorda su questo dispositivo</label>
     <button class="btn" id="go">Connetti</button>
     <div class="err" id="lerr"></div>
-    <div class="or">oppure</div>
-    <label class="btn ghost" style="text-align:center;display:block">Carica un file M3U
+    <div class="or webonly">oppure</div>
+    <label class="btn ghost webonly" style="text-align:center;display:block">Carica un file M3U
       <input id="m3ufile" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,text/plain" hidden>
     </label>
   </form>
@@ -162,11 +172,14 @@ body.has-mini #list{padding-bottom:300px}
 const $=s=>document.querySelector(s);
 const S={mode:null,base:'',u:'',p:'',dns:'',home:'',tab:'live',cat:'*',q:'',limit:120,items:{},cats:{}};
 const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+/* Nell'app Android TV il ponte è dentro l'app stessa: niente Cloudflare, niente limiti http/https */
+const NATIVE=!!window.BatTVNative,NATIVE_PX='https://appassets.androidplatform.net/proxy';
+const bridge=()=>NATIVE?NATIVE_PX:S.px;
 /* Passa sempre dal ponte, se c'è (serve per leggere il DNS, che non permette la lettura diretta) */
-const PA=u=>S.px?S.px+(S.px.includes('?')?'&':'?')+'url='+encodeURIComponent(u):u;
-/* Passa dal ponte gli indirizzi http (bloccati da una pagina https) */
-const P=u=>S.px&&/^http:/i.test(u||'')?PA(u):u;
-const mixed=b=>location.protocol==='https:'&&/^http:/i.test(b)&&!S.px;
+const PA=u=>{const b=bridge();return b?b+(b.includes('?')?'&':'?')+'url='+encodeURIComponent(u):u};
+/* Passa dal ponte gli indirizzi http (bloccati da una pagina https); nell'app passa tutto */
+const P=u=>NATIVE?(/^https?:/i.test(u||'')?PA(u):u):(S.px&&/^http:/i.test(u||'')?PA(u):u);
+const mixed=b=>!NATIVE&&location.protocol==='https:'&&/^http:/i.test(b)&&!S.px;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- Xtream ---------- */
@@ -176,9 +189,9 @@ async function api(action,extra='',noRetry){
   try{r=await fetch(P(url()))}catch(e){
     /* Il server non risponde: forse il provider l'ha cambiato, chiedo quello nuovo al DNS e riprovo una volta */
     if(!noRetry&&await refreshBase())return api(action,extra,true);
-    throw new Error(S.px?'Il ponte non risponde: controlla l\'indirizzo del ponte.':'Il server non risponde o non accetta connessioni da questa pagina.');
+    throw new Error(S.px&&!NATIVE?'Il ponte non risponde: controlla l\'indirizzo del ponte.':'Il server non risponde.');
   }
-  if(r.status===403&&S.px)throw new Error('Il ponte rifiuta la chiave: controlla la parte ?k= nell\'indirizzo del ponte.');
+  if(r.status===403&&S.px&&!NATIVE)throw new Error('Il ponte rifiuta la chiave: controlla la parte ?k= nell\'indirizzo del ponte.');
   if(!r.ok){
     if(!noRetry&&r.status>=500&&await refreshBase())return api(action,extra,true);
     throw new Error('Il server ha risposto con errore '+r.status+'.');
@@ -195,7 +208,7 @@ async function dnsCandidates(){
     if(!r.ok)throw 0;
     d=await r.json();
   }catch(e){
-    throw new Error(S.px?'Non riesco a leggere l\'indirizzo DNS, nemmeno passando dal ponte.':'Non riesco a leggere l\'indirizzo DNS: il sito non permette la lettura diretta, inserisci l\'indirizzo del ponte.');
+    throw new Error(bridge()?'Non riesco a leggere l\'indirizzo DNS: controlla che sia giusto.':'Non riesco a leggere l\'indirizzo DNS: il sito non permette la lettura diretta, inserisci l\'indirizzo del ponte.');
   }
   const out=[];
   for(const s of (d&&d.servers)||[]){
@@ -380,6 +393,7 @@ function renderList(){
 }
 
 async function openSeries(it){
+  S.lastFocus=document.activeElement;
   const box=$('#series');box.hidden=false;box.innerHTML='<p class="status">Caricamento episodi…</p>';
   try{
     const d=await api('get_series_info','&series_id='+it.id);
@@ -392,18 +406,21 @@ async function openSeries(it){
       ${eps[s].map((e,n)=>`<button class="ep" data-e="${n}">${esc(e.episode_num)}. ${esc(e.title||'Episodio')}</button>`).join('')}`;
       box.onclick=ev=>{
         const b=ev.target.closest('button');if(!b)return;
-        if(b.id==='sback'){box.hidden=true;return}
-        if(b.dataset.s)return draw(b.dataset.s);
+        if(b.id==='sback'){battvBack();return}
+        if(b.dataset.s){draw(b.dataset.s);focusEl(box.querySelector(`[data-s="${CSS.escape(b.dataset.s)}"]`));return}
         if(b.dataset.e){const e=eps[s][b.dataset.e];play(`${it.name} · S${s}E${e.episode_num}`,`${S.base}/series/${encodeURIComponent(S.u)}/${encodeURIComponent(S.p)}/${e.id}.${e.container_extension||'mp4'}`)}
       };
     };
-    draw(seasons[0]);
-  }catch(e){box.innerHTML=`<button class="btn ghost" onclick="this.parentNode.hidden=true">Indietro</button><p class="status" style="color:var(--bad)">${esc(e.message)}</p>`}
+    draw(seasons[0]);focusEl(box.querySelector('.ep'));
+  }catch(e){box.innerHTML=`<button class="btn ghost" onclick="battvBack()">Indietro</button><p class="status" style="color:var(--bad)">${esc(e.message)}</p>`;focusEl(box.querySelector('button'))}
 }
 
 let hls=null;
 let playId=0;
 function play(title,raw,retried){
+  if(!retried||!S.lastFocus||!document.contains(S.lastFocus))S.lastFocus=document.activeElement;
+  /* Nell'app il video va al player nativo, che legge anche MKV e audio AC3 */
+  if(NATIVE){S.lastPlay={title,raw,retried:!!retried};BatTVNative.play(raw,title);return}
   const v=$('#vid'),id=++playId;$('#perr').textContent='';$('#ptitle').textContent=title;$('#player').hidden=false;
   if(hls){hls.destroy();hls=null}
   const url=P(raw);let failed=false;
@@ -440,7 +457,7 @@ function stop(){
 function enterApp(){$('#login').hidden=true;$('#app').hidden=false;
   const avail=['live','vod','series'].filter(t=>S.mode==='x'||(S.items[t]||[]).length);
   document.querySelectorAll('.tab[data-t]').forEach(b=>b.hidden=b.dataset.t!=='fav'&&!avail.includes(b.dataset.t));
-  show(getFavs().length?'fav':(avail[0]||'live'));
+  show(getFavs().length?'fav':(avail[0]||'live')).then(()=>focusEl($('.tab[aria-pressed=true]')));
 }
 $('#lf').addEventListener('submit',async e=>{
   e.preventDefault();$('#lerr').textContent='';$('#go').disabled=true;$('#go').textContent='Connessione…';
@@ -462,25 +479,28 @@ $('#m3ufile').addEventListener('change',e=>{
   S.px=$('#px').value.trim();
   const r=new FileReader();r.onload=()=>{parseM3U(r.result);enterApp()};r.readAsText(f);
 });
-document.querySelectorAll('.tab[data-t]').forEach(b=>b.onclick=()=>show(b.dataset.t));
-$('#cats').onclick=e=>{
+document.querySelectorAll('.tab[data-t]').forEach(b=>b.onclick=()=>show(b.dataset.t));$('#cats').onclick=e=>{
   const a=e.target.closest('[data-act],[data-mv],[data-hide]');
+  /* Le liste vengono ridisegnate: rimetto il riquadro del telecomando sul pulsante appena usato */
+  const C=s=>$('#cats').querySelector(s);
   if(a){
-    if(a.dataset.mv)return moveCat(a.dataset.id,a.dataset.mv);
-    if(a.dataset.hide!==undefined){const y=$('#cats').scrollTop;toggleHidden(a.dataset.hide);renderCats();$('#cats').scrollTop=y;renderList();return}
+    if(a.dataset.mv){const id=a.dataset.id,mv=a.dataset.mv;moveCat(id,mv);const n=C(`[data-mv="${mv}"][data-id="${CSS.escape(id)}"]`);focusEl(n&&!n.disabled?n:C(`[data-hide="${CSS.escape(id)}"]`));return}
+    if(a.dataset.hide!==undefined){const id=a.dataset.hide,y=$('#cats').scrollTop;toggleHidden(id);renderCats();$('#cats').scrollTop=y;renderList();focusEl(C(`[data-hide="${CSS.escape(id)}"]`));return}
     if(a.dataset.act==='edit')S.editCats=true;
     if(a.dataset.act==='done')S.editCats=false;
     if(a.dataset.act==='reset'){store.del(ordKey(S.tab));store.del(hidKey(S.tab))}
-    renderCats();renderList();$('#cats').scrollTop=0;return;
+    renderCats();renderList();$('#cats').scrollTop=0;
+    focusEl(C(S.editCats?`[data-act="${a.dataset.act==='reset'?'reset':'done'}"]`:'.cat[aria-pressed=true]'));return;
   }
-  const b=e.target.closest('.cat');if(!b)return;S.cat=b.dataset.c;S.limit=120;renderCats();renderList();$('#list').scrollTop=0};
+  const b=e.target.closest('.cat');if(!b)return;S.cat=b.dataset.c;S.limit=120;renderCats();renderList();$('#list').scrollTop=0;
+  focusEl(C(`.cat[data-c="${CSS.escape(S.cat)}"]`))};
 let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{S.q=e.target.value;S.limit=120;renderList()},200)};
 $('#list').onclick=e=>{
-  if(e.target.id==='more'){S.limit+=120;renderList();return}
+  if(e.target.id==='more'){const n=S.limit;S.limit+=120;renderList();focusEl($('#list').querySelector(`.open[data-n="${n}"]`));return}
   const fb=e.target.closest('.fav');
   if(fb){
     const it=$('#list')._items[fb.dataset.f];toggleFav(it);
-    if(S.tab==='fav'){S.items.fav=getFavs();renderList();return}
+    if(S.tab==='fav'){const n=+fb.dataset.f;S.items.fav=getFavs();renderList();const fs=$('#list').querySelectorAll('.fav');focusEl(fs[Math.min(n,fs.length-1)]||$('.tab[data-t=fav]'));return}
     const on=isFav(it);fb.setAttribute('aria-pressed',on);fb.textContent=on?'★':'☆';
     fb.setAttribute('aria-label',(on?'Togli dai':'Aggiungi ai')+' preferiti');return;
   }
@@ -502,14 +522,80 @@ $('#ppip').onclick=async()=>{
   }catch(e){$('#perr').textContent='Il Picture in Picture non è disponibile qui: usa Riduci.'}
 };
 $('#vid').addEventListener('enterpictureinpicture',()=>setMini(true));
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#player').hidden&&!$('#player').classList.contains('mini'))stop()});
-$('#out').onclick=()=>{store.del('xt');S.items={};S.cats={};$('#app').hidden=true;$('#login').hidden=false};
+$('#out').onclick=()=>{store.del('xt');S.items={};S.cats={};$('#app').hidden=true;$('#login').hidden=false;focusEl($('#srv'))};
+
+/* ---------- Telecomando: frecce per spostarsi, OK per scegliere, Indietro per tornare ---------- */
+function focusables(){
+  const pl=$('#player'),root=!pl.hidden&&!pl.classList.contains('mini')?pl:!$('#series').hidden?$('#series'):!$('#login').hidden?$('#login'):document.body;
+  return [...root.querySelectorAll('button,input:not([type=file]),video[controls]')].filter(e=>!e.disabled&&e.offsetParent!==null&&!e.closest('[hidden]'));
+}
+function focusEl(e){if(!e)return false;e.focus({preventScroll:true});e.scrollIntoView({block:'nearest',inline:'nearest'});return true}
+function moveFocus(dir){
+  const els=focusables(),cur=document.activeElement;
+  if(!els.length)return false;
+  if(!els.includes(cur))return focusEl(els.find(e=>$('#list').contains(e))||els[0]);
+  const r=cur.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  /* Cerca prima dentro un cono di 45° nella direzione premuta, poi ovunque in quella direzione; vince il più vicino e allineato */
+  let best=null,bs=Infinity,any=null,as=Infinity;
+  /* Destra e sinistra non salgono sulla barra delle sezioni: quella si raggiunge con su */
+  const hdr=$('header'),side2=(dir==='left'||dir==='right')&&!hdr.contains(cur);
+  for(const e of els){
+    if(e===cur||(side2&&hdr.contains(e)))continue;
+    const q=e.getBoundingClientRect(),dx=q.left+q.width/2-cx,dy=q.top+q.height/2-cy;
+    const main={right:dx,left:-dx,down:dy,up:-dy}[dir],side=dir==='left'||dir==='right'?Math.abs(dy):Math.abs(dx);
+    if(main<4)continue;
+    const s=main+side*2;
+    if(side<=main&&s<bs){bs=s;best=e}
+    if(s<as){as=s;any=e}
+  }
+  return focusEl(best||any);
+}
+function backTo(e){if(e&&document.contains(e)&&e.offsetParent!==null)focusEl(e);else moveFocus('down')}
+/* Indietro: chiude quello che è aperto, poi risale lista → categorie → sezioni. Restituisce false se non c'è più niente da chiudere. */
+window.battvBack=function(){
+  if(!$('#player').hidden){stop();backTo(S.lastFocus);return true}
+  if(!$('#series').hidden){$('#series').hidden=true;backTo(S.lastFocus);return true}
+  if(S.editCats){S.editCats=false;renderCats();renderList();focusEl($('#cats .cat[aria-pressed=true]'));return true}
+  if(!$('#app').hidden){
+    const t=document.activeElement;
+    if(t&&$('#list').contains(t)&&!$('#cats').hidden)return focusEl($('#cats .cat[aria-pressed=true]')||$('#cats button'));
+    if(t&&($('#list').contains(t)||$('#cats').contains(t)||t===$('#q')))return focusEl($('.tab[aria-pressed=true]'));
+  }
+  return false;
+};
+document.addEventListener('keydown',e=>{
+  const t=document.activeElement,typing=t&&t.tagName==='INPUT'&&/^(text|search|url|password)$/.test(t.type);
+  const dir={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key];
+  if(dir){
+    /* Nei campi di testo e sul video le frecce destra/sinistra restano al campo (cursore) e al video (avanti/indietro) */
+    if((typing||(t&&t.tagName==='VIDEO'))&&(dir==='left'||dir==='right'))return;
+    e.preventDefault();moveFocus(dir);return;
+  }
+  if(e.key==='Escape'||e.key==='GoBack'||e.key==='BrowserBack'||(e.key==='Backspace'&&!typing)){if(battvBack())e.preventDefault()}
+});
+
+/* ---------- App Android TV: ponte e player nativi ---------- */
+if(NATIVE){
+  document.body.classList.add('tv');
+  /* Il player nativo segnala un errore: se il provider ha cambiato server riprovo da quello nuovo */
+  window.battvNativeError=async()=>{
+    const lp=S.lastPlay;if(!lp)return;
+    const old=S.base;
+    if(!lp.retried&&S.mode==='x'&&S.dns&&lp.raw.startsWith(old+'/')){
+      BatTVNative.toast('Cerco il server aggiornato…');
+      if(await refreshBase())return play(lp.title,S.base+lp.raw.slice(old.length),true);
+    }
+    BatTVNative.toast('Impossibile riprodurre questo contenuto.');
+    backTo(S.lastFocus);
+  };
+  window.battvNativeClosed=()=>backTo(S.lastFocus);
+}
 
 /* Accesso automatico se salvato */
 const saved=store.get('xt');
 if(saved){$('#srv').value=saved.base||'';$('#usr').value=saved.u;$('#pwd').value=saved.p;$('#px').value=saved.px||'';$('#dns').value=saved.dns||'';
-  loginXtream(saved.base,saved.u,saved.p,saved.px,saved.dns,saved.home||saved.base).then(()=>{saveBase();enterApp()}).catch(e=>{$('#lerr').textContent=e.message});
-}
+  loginXtream(saved.base,saved.u,saved.p,saved.px,saved.dns,saved.home||saved.base).then(()=>{saveBase();enterApp()}).catch(e=>{$('#lerr').textContent=e.message;focusEl($('#go'))});
+}else if(NATIVE)focusEl($('#srv'));
 </script>
 </body>
 </html>

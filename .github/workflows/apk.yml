@@ -1,0 +1,68 @@
+name: APK Android TV
+
+# Compila l'app a ogni modifica del player o dell'app e la pubblica tra le Release.
+# L'ultima versione si scarica sempre da:
+# https://github.com/mikraz/battv/releases/latest/download/BatTV.apk
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'android/**', '.github/workflows/apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Controlla la chiave di firma
+        id: key
+        env:
+          KS: ${{ secrets.BATTV_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS" ]; then
+            echo "::warning::Mancano i secret BATTV_KEYSTORE_B64 e BATTV_KEYSTORE_PASSWORD (Settings → Secrets and variables → Actions): APK non compilato."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ok == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Compila e firma
+        if: steps.key.outputs.ok == 'true'
+        env:
+          KS: ${{ secrets.BATTV_KEYSTORE_B64 }}
+          BATTV_KEYSTORE_PASSWORD: ${{ secrets.BATTV_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/battv.keystore"
+          export BATTV_KEYSTORE="$RUNNER_TEMP/battv.keystore"
+          # Il numero di versione cresce a ogni build, così Android accetta l'aggiornamento
+          export BATTV_VERSION_CODE=$(( ${{ github.run_number }} + 1 ))
+          export BATTV_VERSION_NAME="1.$BATTV_VERSION_CODE"
+          cd android
+          gradle --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/BatTV.apk"
+          rm -f "$RUNNER_TEMP/battv.keystore"
+
+      - uses: softprops/action-gh-release@v2
+        if: steps.key.outputs.ok == 'true'
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: BatTV Android TV ${{ github.run_number }}
+          body: Versione compilata da ${{ github.sha }}. Installa BatTV.apk sopra la versione precedente.
+          files: ${{ runner.temp }}/BatTV.apk
+          make_latest: true
