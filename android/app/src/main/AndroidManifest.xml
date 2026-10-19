@@ -33,6 +33,7 @@
             android:name=".PlayerActivity"
             android:exported="false"
             android:theme="@style/Theme.BatTV.Player"
+            android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode" />
 
         <provider

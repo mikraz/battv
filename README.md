@@ -12,6 +12,8 @@ Player IPTV leggero in un solo file HTML, pensato per il browser della Tesla e p
 - Categorie riordinabili e nascondibili
 - Mini player per fare zapping mentre sfogli, più Picture in Picture dove il browser lo supporta
 
+- Si adatta al telefono: sezioni in una barra in basso, categorie a scorrimento, tre locandine per riga; il gesto Indietro chiude player e serie invece di uscire dal sito
+
 Preferiti, progressi delle serie, ordine e categorie nascoste sono salvati nel browser di ciascun dispositivo.
 
 ## File
@@ -50,7 +52,8 @@ La cartella `android/` contiene un'app che mostra lo stesso `index.html` sul tel
 - **vista compatta**: testo e spaziature più piccoli per vedere più canali e categorie per schermata;
 - **aggiornamenti**: all'avvio controlla le Release di GitHub e, se c'è una versione nuova, chiede se installarla;
 - **player nativo ExoPlayer**: legge HLS, TS, MP4 e MKV, con audio AC3 se il box lo supporta;
-- **ponte interno**: l'app legge DNS e server in http da sola, quindi il campo Ponte non serve e non compare.
+- **ponte interno**: l'app legge DNS e server in http da sola, quindi il campo Ponte non serve e non compare;
+- **anche su telefono**: sul telefono l'app usa la vista touch (con le stelle per i preferiti) e il player si gira in orizzontale.
 
 ### Installazione
 

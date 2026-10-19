@@ -146,6 +146,14 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        /** true sul televisore (vista TV e telecomando), false su telefono e tablet (vista touch) */
+        @JavascriptInterface
+        fun isTv(): Boolean {
+            val ui = getSystemService(UI_MODE_SERVICE) as android.app.UiModeManager
+            return ui.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+                packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+        }
+
         @JavascriptInterface
         fun toast(msg: String) = runOnUiThread {
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
