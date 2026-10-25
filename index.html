@@ -110,6 +110,7 @@ body.has-mini #list{padding-bottom:300px}
 
 /* Telecomando: riquadro di selezione evidente anche da lontano */
 .cat:focus-visible,.tab:focus-visible,.ep:focus-visible,.crow button:focus-visible,.cattool:focus-visible{outline:3px solid var(--accent);outline-offset:2px;color:var(--fg)}
+.tab[aria-pressed=true]:focus-visible,.cat[aria-pressed=true]:focus-visible{color:var(--bg)}
 body.tv .item:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent)}
 .item:has(:focus-visible){border-color:var(--accent);box-shadow:0 0 0 3px var(--accent)}
 .item .open:focus-visible{outline:0}
@@ -235,46 +236,15 @@ button{-webkit-tap-highlight-color:transparent}
   #player.mini{width:min(300px,45vw);bottom:8px;right:8px}
 }
 
-/* ---------- Scheda di film e serie ---------- */
-#series{isolation:isolate}
-.dbg{position:absolute;left:0;right:0;top:0;height:min(60vh,420px);background:center/cover no-repeat;opacity:.22;z-index:-1;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent);pointer-events:none}
-.dhead{display:flex;gap:18px;align-items:flex-start;margin:6px 0 16px}
-.dposter{flex:none;width:150px;aspect-ratio:2/3;border-radius:10px;background:var(--line) center/cover no-repeat;box-shadow:0 8px 24px rgba(0,0,0,.5)}
-.dinfo{min-width:0;flex:1}
-#series .dinfo h2{margin:0 0 6px}
-.dmeta{margin:0 0 10px;color:var(--mute);font-size:14px}
-.dplot{margin:0 0 10px;max-width:70ch;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
-.dwho{margin:0 0 12px;max-width:70ch;color:var(--mute);font-size:13px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.dwho b{color:var(--fg);font-weight:600}
-.dact{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.dact .btn.resume{display:inline-block;width:auto;margin:0}
-.dact .status{margin:0}
-#dfav[aria-pressed=true]{color:var(--star);border-color:var(--star)}
 /* Prossimo episodio */
 #nextup{position:fixed;z-index:20;right:24px;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:min(360px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:6px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
 #nextup small,#nutime{color:var(--mute);font-size:13px}
 .nbar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin:4px 0}
 .nbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
 #nextup .row .btn{padding:10px 14px}
-body.tv .dposter{width:105px}
-body.tv #series .dinfo h2{font-size:20px}
-body.tv .dmeta{font-size:12px;margin-bottom:6px}
-body.tv .dplot{font-size:13px;-webkit-line-clamp:4;margin-bottom:6px}
-body.tv .dwho{font-size:12px;-webkit-line-clamp:2;margin-bottom:8px}
 body.tv #nextup{padding:10px 12px;width:300px}
 @media (max-width:700px){
-  .dhead{gap:12px;margin-bottom:12px}
-  .dposter{width:96px;border-radius:8px}
-  #series .dinfo h2{font-size:19px}
-  .dmeta{font-size:13px;margin-bottom:8px}
-  .dplot{font-size:14px;-webkit-line-clamp:6}
-  .dwho{font-size:12px}
-  .dact .btn{flex:1 1 auto;padding:10px 12px;font-size:14px}
   #nextup{left:12px;right:12px;width:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
-}
-@media (max-height:500px) and (min-width:701px){
-  .dposter{width:90px}
-  .dplot{-webkit-line-clamp:3}
 }
 </style>
 </head>
@@ -342,7 +312,7 @@ const mixed=b=>!NATIVE&&location.protocol==='https:'&&/^http:/i.test(b)&&!S.px;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- Xtream ---------- */
-async function api(action,extra='',noRetry){
+async function api(action,extra='',noRetry,again){
   const url=()=>`${S.base}/player_api.php?username=${encodeURIComponent(S.u)}&password=${encodeURIComponent(S.p)}${action?'&action='+action:''}${extra}`;
   let r;
   try{r=await fetch(P(url()))}catch(e){
@@ -355,7 +325,12 @@ async function api(action,extra='',noRetry){
     if(!noRetry&&r.status>=500&&await refreshBase())return api(action,extra,true);
     throw new Error('Il server ha risposto con errore '+r.status+'.');
   }
-  return r.json();
+  /* Gli elenchi grandi (i film possono pesare oltre 10 MB) a volte arrivano troncati: in quel caso riprovo una volta */
+  const txt=await r.text();
+  try{return JSON.parse(txt)}catch(e){
+    if(!again)return api(action,extra,noRetry,true);
+    throw new Error('Il provider ha mandato un elenco incompleto. Riprova tra poco: se capita spesso, avvisa Michele.');
+  }
 }
 
 /* ---------- Server che cambia: lo legge dall'indirizzo DNS del provider ---------- */
@@ -615,60 +590,6 @@ function continueList(){
     sub:`S${p.last.s}E${p.last.num}${p.last.done?' ✓':p.last.pos>5?' · '+fmtT(p.last.pos):''}`}));
 }
 
-/* ---------- Scheda di film e serie: locandina, anno, durata, genere, voto, trama, regia e cast ---------- */
-const fmtDur=x=>{x=Math.round(x/60);const h=Math.floor(x/60),m=x%60;return h?`${h} h${m?` ${m} min`:''}`:`${m} min`};
-const clean=v=>{v=String(v??'').trim();return /^(n\/?a|null|undefined|0|0\.0)$/i.test(v)?'':v};
-function detailHead(it,i,actions){
-  i=i&&!Array.isArray(i)?i:{};
-  const poster=clean(i.movie_image||i.cover_big||i.cover)||it.logo||'';
-  const bd=clean(Array.isArray(i.backdrop_path)?i.backdrop_path[0]:i.backdrop_path);
-  const year=(clean(i.releasedate||i.releaseDate||i.release_date||i.year).match(/\d{4}/)||[''])[0];
-  let dur='';const secs=+i.duration_secs||0,dd=clean(i.duration);
-  if(secs>0)dur=fmtDur(secs);
-  else if(/^\d+:\d{2}(:\d{2})?$/.test(dd)){const q=dd.split(':').map(Number);dur=fmtDur(q.length===3?q[0]*3600+q[1]*60+q[2]:q[0]*60+q[1])}
-  else if(+i.episode_run_time>0)dur=`${+i.episode_run_time} min a episodio`;
-  const rating=parseFloat(clean(i.rating))||parseFloat(clean(i.rating_5based))*2||0;
-  const meta=[year,dur,clean(i.genre),rating>0?`★ ${rating.toFixed(1)}`:''].filter(Boolean).map(esc).join(' · ');
-  const plot=clean(i.plot||i.description),dir=clean(i.director),cast=clean(i.cast||i.actors);
-  const who=[dir&&`<b>Regia</b> ${esc(dir)}`,cast&&`<b>Cast</b> ${esc(cast)}`].filter(Boolean).join('<br>');
-  const bg=u=>`style="background-image:url('${esc(P(u)).replace(/'/g,'%27')}')"`;
-  return `${bd?`<div class="dbg" ${bg(bd)}></div>`:''}<div class="dhead">
-    <div class="dposter" ${poster?bg(poster):''}></div>
-    <div class="dinfo"><h2>${esc(it.name)}</h2>${meta?`<p class="dmeta">${meta}</p>`:''}${plot?`<p class="dplot">${esc(plot)}</p>`:''}${who?`<p class="dwho">${who}</p>`:''}
-    <div class="dact">${actions}</div></div></div>`;
-}
-const favBtn=it=>{const on=isFav(it);return `<button class="btn ghost" id="dfav" aria-pressed="${on}">${on?'★ Nei preferiti':'☆ Aggiungi ai preferiti'}</button>`};
-function detailFav(b,it){
-  toggleFav(it);const on=isFav(it);
-  b.setAttribute('aria-pressed',on);b.textContent=on?'★ Nei preferiti':'☆ Aggiungi ai preferiti';
-}
-
-async function openMovie(it){
-  S.lastFocus=document.activeElement;
-  if($('#series').hidden)pushLayer();
-  const box=$('#series');box.hidden=false;
-  it={...it,type:'vod'};let info=null;
-  const draw=()=>{
-    box.innerHTML=`<div class="row"><button class="btn ghost" id="sback">Indietro</button></div>`+
-      detailHead(it,info,`<button class="btn" id="dplay">▶ Guarda</button>${favBtn(it)}`)+(info?'':'<p class="status">Carico la scheda…</p>');
-    box.onclick=ev=>{
-      const b=ev.target.closest('button');if(!b)return;
-      if(b.id==='sback')return battvBack();
-      if(b.id==='dplay')return play(it.name,xUrl('movie',it));
-      if(b.id==='dfav')return detailFav(b,it);
-    };
-  };
-  const view=S.seriesView={type:'vod',id:it.id,redraw(){draw();focusEl($('#dplay'))}};
-  draw();focusEl($('#dplay'));
-  /* La scheda compare subito; trama e dettagli arrivano appena il provider risponde (Guarda funziona già) */
-  let d=null;try{d=await api('get_vod_info','&vod_id='+it.id)}catch(e){}
-  if(S.seriesView!==view||box.hidden)return;
-  info=(d&&d.info)||{};
-  if(!it.ext&&d&&d.movie_data&&d.movie_data.container_extension)it.ext=d.movie_data.container_extension;
-  const f=document.activeElement&&box.contains(document.activeElement)?document.activeElement.id:'dplay';
-  draw();if($('#player').hidden)focusEl($('#'+f)||$('#dplay'));
-}
-
 async function openSeries(it){
   S.lastFocus=document.activeElement;
   if($('#series').hidden)pushLayer();
@@ -678,7 +599,7 @@ async function openSeries(it){
     const d=await api('get_series_info','&series_id='+it.id);
     const eps=d.episodes||{};const seasons=Object.keys(eps).sort((a,b)=>a-b);
     if(!seasons.length)throw new Error('Nessun episodio disponibile.');
-    const info={id:it.id,name:it.name,logo:it.logo||clean(d.info&&d.info.cover)};
+    const info={id:it.id,name:it.name,logo:it.logo};
     const epUrl=e=>`${S.base}/series/${encodeURIComponent(S.u)}/${encodeURIComponent(S.p)}/${e.id}.${e.container_extension||'mp4'}`;
     /* next: l'episodio dopo questo, per farlo partire da solo a fine visione */
     const playEp=(s,e,start)=>play(`${it.name} · S${s}E${e.episode_num}`,epUrl(e),false,
@@ -689,9 +610,9 @@ async function openSeries(it){
       cur=s;
       const p=getProg()[it.id]||{},w=p.w||{},L=p.last,r=resumeTarget(it.id,eps,seasons);
       const rlabel=r&&`${r.next?'▶ Prossimo':'▶ Riprendi'} S${esc(r.s)}E${esc(r.e.episode_num)} · ${esc(r.e.title||'Episodio')}${r.pos>5?` <small>da ${fmtT(r.pos)}</small>`:''}`;
-      const act=(r?`<button class="btn resume" id="sresume">${rlabel}</button>`:(L?'<span class="status">Hai visto tutti gli episodi ✓</span>':''))+favBtn(it);
       box.innerHTML=`<div class="row"><button class="btn ghost" id="sback">Indietro</button></div>
-      ${detailHead(it,d.info,act)}
+      <h2>${esc(it.name)}</h2>
+      ${r?`<button class="btn resume" id="sresume">${rlabel}</button>`:(L?'<p class="status">Hai visto tutti gli episodi ✓</p>':'')}
       <div class="seasons">${seasons.map(x=>`<button class="tab" data-s="${x}" aria-pressed="${x===s}">Stagione ${esc(x)}</button>`).join('')}</div>
       ${eps[s].map((e,n)=>{
         const half=L&&!L.done&&String(L.epId)===String(e.id)&&L.pos>5;
@@ -700,7 +621,6 @@ async function openSeries(it){
       box.onclick=ev=>{
         const b=ev.target.closest('button');if(!b)return;
         if(b.id==='sback'){battvBack();return}
-        if(b.id==='dfav'){detailFav(b,it);return}
         if(b.id==='sresume'){const t=resumeTarget(it.id,eps,seasons);if(t)playEp(t.s,t.e,t.pos);return}
         if(b.dataset.s){draw(b.dataset.s);focusEl(box.querySelector(`[data-s="${CSS.escape(b.dataset.s)}"]`));return}
         if(b.dataset.e){
@@ -854,7 +774,6 @@ $('#list').onclick=e=>{
   if(it.url)return play(it.name,it.url);
   const t=typeOf(it);
   if(t==='series')return openSeries(it);
-  if(t==='vod'&&S.mode==='x')return openMovie(it);
   play(it.name,xUrl(t==='vod'?'movie':'live',it));
 };
 $('#nugo').onclick=()=>S.nextUp&&S.nextUp.go();
@@ -929,7 +848,7 @@ function closeSeries(){
   $('#series').hidden=true;dropLayer();
   const v=S.seriesView;S.seriesView=null;
   /* Aggiorna la lista (Continua a guardare, stelle cambiate nella scheda) e rimette il riquadro sullo stesso titolo */
-  if(v&&!$('#app').hidden&&S.tab!=='live'){
+  if(v&&v.type==='series'&&!$('#app').hidden&&(S.tab==='fav'||S.tab==='series')){
     if(S.tab==='fav')S.items.fav=getFavs();
     renderList();
     const n=($('#list')._items||[]).findIndex(i=>typeOf(i)===v.type&&String(i.id)===String(v.id));

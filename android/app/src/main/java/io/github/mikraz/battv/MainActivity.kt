@@ -111,27 +111,37 @@ class MainActivity : ComponentActivity() {
 
     /** Il ponte interno: gira la richiesta al server e restituisce la risposta alla pagina. Gira già in un thread separato. */
     private fun proxy(target: String?, range: String?): WebResourceResponse {
-        val cors = mutableMapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+        val cors = mutableMapOf("Access-Control-Allow-Origin" to "*")
         if (target == null || !(target.startsWith("http://") || target.startsWith("https://"))) {
-            return WebResourceResponse("text/plain", "utf-8", 400, "Bad Request", cors, ByteArrayInputStream(ByteArray(0)))
+            return WebResourceResponse("text/plain", "utf-8", 400, "Bad Request", cors + ("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
         }
-        return try {
-            val b = Request.Builder().url(target).header("User-Agent", Net.UA)
-            if (range != null) b.header("Range", range)
-            val r = Net.http.newCall(b.build()).execute()
-            val body = r.body
-            val ct = r.header("Content-Type") ?: "application/octet-stream"
-            val mime = ct.substringBefore(';').trim()
-            val charset = Regex("charset=([^;]+)", RegexOption.IGNORE_CASE).find(ct)?.groupValues?.get(1)?.trim()
-            r.header("Content-Range")?.let { cors["Content-Range"] = it }
-            r.header("Accept-Ranges")?.let { cors["Accept-Ranges"] = it }
-            // Android non accetta codici 3xx in questa risposta: i reindirizzamenti li segue già OkHttp
-            val code = if (r.code in 300..399) 502 else r.code
-            val reason = r.message.ifBlank { if (code < 400) "OK" else "Error" }
-            WebResourceResponse(mime, charset, code, reason, cors, body?.byteStream() ?: ByteArrayInputStream(ByteArray(0)))
-        } catch (e: Exception) {
-            WebResourceResponse("text/plain", "utf-8", 502, "Bad Gateway", cors, ByteArrayInputStream(ByteArray(0)))
+        // La risposta viene letta tutta prima di passarla alla pagina: se la connessione si interrompe a metà
+        // (succede con l'elenco dei film, oltre 10 MB) si riprova invece di consegnare un pezzo illeggibile.
+        repeat(2) {
+            try {
+                val b = Request.Builder().url(target).header("User-Agent", Net.UA)
+                if (range != null) b.header("Range", range)
+                Net.http.newCall(b.build()).execute().use { r ->
+                    val bytes = r.body?.bytes() ?: ByteArray(0)
+                    val ct = r.header("Content-Type") ?: "application/octet-stream"
+                    val mime = ct.substringBefore(';').trim()
+                    val charset = Regex("charset=([^;]+)", RegexOption.IGNORE_CASE).find(ct)?.groupValues?.get(1)?.trim()
+                    val h = cors.toMutableMap()
+                    // Locandine e loghi restano in memoria per una settimana: tornando alla lista non si riscaricano.
+                    // Gli elenchi invece si chiedono sempre freschi.
+                    h["Cache-Control"] = if (mime.startsWith("image/") && r.isSuccessful) "max-age=604800" else "no-store"
+                    r.header("Content-Range")?.let { h["Content-Range"] = it }
+                    r.header("Accept-Ranges")?.let { h["Accept-Ranges"] = it }
+                    // Android non accetta codici 3xx in questa risposta: i reindirizzamenti li segue già OkHttp
+                    val code = if (r.code in 300..399) 502 else r.code
+                    val reason = r.message.ifBlank { if (code < 400) "OK" else "Error" }
+                    return WebResourceResponse(mime, charset, code, reason, h, ByteArrayInputStream(bytes))
+                }
+            } catch (_: Exception) {
+                // connessione interrotta o server che non risponde: secondo tentativo, poi errore
+            }
         }
+        return WebResourceResponse("text/plain", "utf-8", 502, "Bad Gateway", cors + ("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
     }
 
     /** Funzioni che la pagina può chiamare come window.BatTVNative.* */
