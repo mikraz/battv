@@ -236,14 +236,14 @@ button{-webkit-tap-highlight-color:transparent}
 <body>
 
 <section id="login">
-  <form class="box" id="lf">
+  <form class="box" id="lf" novalidate>
     <h1>BatTV</h1>
     <p>Inserisci i dati Xtream del tuo provider.</p>
-    <label>Server <input id="srv" type="url" placeholder="https://server.esempio:443"></label>
-    <label>Indirizzo DNS del provider, per aggiornare il server da solo (facoltativo) <input id="dns" type="url" placeholder="https://sito.esempio/dns.php"></label>
-    <label>Username <input id="usr" type="text" autocomplete="username" required></label>
+    <label>Server <input id="srv" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://server.esempio:443"></label>
+    <label>Indirizzo DNS del provider, per aggiornare il server da solo (facoltativo) <input id="dns" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://sito.esempio/dns.php"></label>
+    <label>Username <input id="usr" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
     <label>Password <input id="pwd" type="password" autocomplete="current-password" required></label>
-    <label class="webonly">Ponte https (se il server è in http) <input id="px" type="url" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
+    <label class="webonly">Ponte https (se il server è in http) <input id="px" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
     <label class="row" style="color:var(--fg)"><input id="rem" type="checkbox" checked> Ricorda su questo dispositivo</label>
     <button class="btn" id="go">Connetti</button>
     <div class="err" id="lerr"></div>
@@ -312,6 +312,15 @@ async function api(action,extra='',noRetry){
 }
 
 /* ---------- Server che cambia: lo legge dall'indirizzo DNS del provider ---------- */
+/* Pulisce un indirizzo scritto a mano: toglie spazi e caratteri invisibili (la tastiera della TV ne lascia),
+   aggiunge http(s):// se manca. Restituisce '' se non sembra un indirizzo. */
+function normUrl(s,scheme){
+  s=String(s||'').replace(/[\s​-‍﻿]+/g,'');
+  if(!s)return '';
+  if(!/^https?:\/\//i.test(s))s=(scheme||'http')+'://'+s.replace(/^\/+/,'');
+  s=s.replace(/\/+$/,'');
+  return /^https?:\/\/[a-z0-9.-]+(:\d+)?(\/|$)/i.test(s)&&/[a-z0-9]\.[a-z0-9]|localhost|:\d/i.test(s.split('/')[2])?s:'';
+}
 async function dnsCandidates(){
   if(!S.dns)return [];
   let d;
@@ -324,12 +333,13 @@ async function dnsCandidates(){
   }
   const out=[];
   for(const s of (d&&d.servers)||[]){
-    const h=String((s&&typeof s==='object'?s.dns||s.url:s)||'').trim().replace(/\/+$/,'');
-    if(!/^https?:\/\//i.test(h))continue;
+    const h=normUrl(s&&typeof s==='object'?s.dns||s.url:s,'http');
+    if(!h)continue;
     /* Spesso il server risponde anche in https: lo provo prima, così non serve il ponte */
     if(/^http:/i.test(h))out.push(h.replace(/^http:/i,'https:'));
     out.push(h);
   }
+  if(!out.length)throw new Error('Il DNS del provider non ha indicato nessun server: riprova tra qualche minuto.');
   return [...new Set(out)];
 }
 async function tryBase(b){
@@ -358,10 +368,14 @@ function refreshBase(){
   return refreshing;
 }
 async function loginXtream(base,u,p,px,dns,home){
-  S.mode='x';S.u=u;S.p=p;S.px=(px||'').trim();S.dns=(dns||'').trim();
+  S.mode='x';S.u=u;S.p=p;S.px=normUrl(px,'https');S.dns=normUrl(dns,'https');
+  const b0=normUrl(base,'http');
+  if((dns||'').trim()&&!S.dns)throw new Error('L\'indirizzo DNS non sembra giusto: controlla che sia scritto come nella guida.');
+  /* Server scritto male ma DNS presente: il server lo prendo dal DNS e quello scritto lo ignoro */
+  if((base||'').trim()&&!b0&&!S.dns)throw new Error('Il server non sembra un indirizzo valido.');
   const list=[];let last=null;
   if(S.dns){try{list.push(...await dnsCandidates())}catch(e){last=e}}
-  if(base)list.push(base.trim().replace(/\/+$/,''));
+  if(b0)list.push(b0);
   const todo=[...new Set(list)];
   if(!todo.length)throw last||new Error('Inserisci il server oppure l\'indirizzo DNS del provider.');
   for(const b of todo){
@@ -670,8 +684,8 @@ $('#lf').addEventListener('submit',async e=>{
   try{
     if(!u||!p)throw new Error('Inserisci username e password.');
     await loginXtream(base,u,p,px,dns,home);
-    $('#srv').value=S.base;
-    if($('#rem').checked)store.set('xt',{base:S.base,u,p,px,dns,home:S.home});else store.del('xt');
+    $('#srv').value=S.base;$('#dns').value=S.dns;
+    if($('#rem').checked)store.set('xt',{base:S.base,u,p,px:S.px,dns:S.dns,home:S.home});else store.del('xt');
     enterApp();
   }catch(err){$('#lerr').textContent=err.message}
   $('#go').disabled=false;$('#go').textContent='Connetti';
