@@ -89,11 +89,13 @@ object Updater {
         if (Build.VERSION.SDK_INT >= 26 && !a.packageManager.canRequestPackageInstalls()) {
             // La prima volta Android chiede di permettere a BatTV di installare app
             pending = f
+            // Sulla Fire TV il permesso sta in Opzioni sviluppatore: lo spiego in una finestra che resta aperta
+            if (Build.MANUFACTURER.equals("Amazon", ignoreCase = true)) return permissionHelp(a, fireTv = true)
             Toast.makeText(a, "Consenti a BatTV di installare app, poi torna indietro.", Toast.LENGTH_LONG).show()
             try {
                 a.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${a.packageName}")))
             } catch (_: ActivityNotFoundException) {
-                Toast.makeText(a, "Apri Impostazioni › App › BatTV e attiva \"Installa app sconosciute\".", Toast.LENGTH_LONG).show()
+                permissionHelp(a, fireTv = false)
             }
             return
         }
@@ -107,6 +109,21 @@ object Updater {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(a, "Installazione non disponibile su questo dispositivo: usa Downloader.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** Spiega dove dare il permesso; al ritorno in BatTV l'installazione riparte da sola (resume) */
+    private fun permissionHelp(a: Activity, fireTv: Boolean) {
+        val path = if (fireTv)
+            "Impostazioni › La mia Fire TV › Opzioni sviluppatore › Installa app sconosciute"
+        else
+            "Impostazioni › App › BatTV › Installa app sconosciute"
+        AlertDialog.Builder(a)
+            .setTitle("Serve un permesso")
+            .setMessage("Per installare l'aggiornamento, BatTV deve avere il permesso di installare app.\n\n" +
+                "Vai in:\n$path\n\ne metti BatTV su ON. Poi torna in BatTV: l'aggiornamento riparte da solo.")
+            .setPositiveButton("Ho capito", null)
+            .show()
+            .getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
     }
 
     /** Al ritorno dalle impostazioni, se il permesso ora c'è, riprende l'installazione */
