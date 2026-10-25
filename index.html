@@ -329,7 +329,7 @@ async function api(action,extra='',noRetry,again){
   const txt=await r.text();
   try{return JSON.parse(txt)}catch(e){
     if(!again)return api(action,extra,noRetry,true);
-    throw new Error('Il provider ha mandato un elenco incompleto. Riprova tra poco: se capita spesso, avvisa Michele.');
+    const err=new Error('Il provider ha mandato un elenco incompleto. Riprova tra poco: se capita spesso, avvisa Michele.');err.partial=true;throw err;
   }
 }
 
@@ -412,12 +412,34 @@ async function loginXtream(base,u,p,px,dns,home){
 async function loadTab(t){
   if(S.items[t])return;
   const map={live:['get_live_categories','get_live_streams'],vod:['get_vod_categories','get_vod_streams'],series:['get_series_categories','get_series']}[t];
-  const [cats,list]=await Promise.all([api(map[0]),api(map[1])]);
+  const cats=await api(map[0]);
+  /* Elenco completo in un colpo solo; se il provider lo interrompe (cataloghi molto grandi) lo chiedo una categoria
+     alla volta, e me lo ricordo per le prossime aperture così non perdo tempo con l'elenco completo */
+  const key='split:'+acct()+':'+t;let list;
+  if(!store.get(key)){
+    try{list=await api(map[1])}catch(e){if(!e.partial)throw e;store.set(key,1)}
+  }
+  if(!list)list=await byCategory(map[1],cats||[]);
   S.cats[t]=(cats||[]).map(c=>({id:String(c.category_id),name:c.category_name}));
   S.items[t]=(list||[]).map(x=>({
     id:x.stream_id??x.series_id, name:x.name||'', logo:x.stream_icon||x.cover||'',
     cat:String(x.category_id), ext:x.container_extension||'', type:t
   }));
+}
+async function byCategory(action,cats){
+  const ids=cats.map(c=>String(c.category_id)),out=[];let done=0,fail=0,i=0;
+  const say=()=>{const st=$('#list .status');if(st)st.textContent=`Caricamento… ${done} di ${ids.length} categorie`};
+  say();
+  const worker=async()=>{
+    while(i<ids.length){
+      const id=ids[i++];
+      try{const r=await api(action,'&category_id='+encodeURIComponent(id));if(Array.isArray(r))out.push(...r.map(x=>x&&x.category_id==null?{...x,category_id:id}:x))}catch(e){fail++}
+      done++;say();
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(5,ids.length)},worker));
+  if(ids.length&&fail===ids.length)throw new Error('Il provider non riesce a mandare l\'elenco. Riprova tra poco: se capita spesso, avvisa Michele.');
+  return out;
 }
 function xUrl(t,it){
   const a=`${S.base}/${t}/${encodeURIComponent(S.u)}/${encodeURIComponent(S.p)}/`;
