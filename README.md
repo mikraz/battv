@@ -54,6 +54,7 @@ La cartella `android/` contiene un'app che mostra lo stesso `index.html` sul tel
 - **aggiornamenti**: all'avvio controlla le Release di GitHub e, se c'è una versione nuova, chiede se installarla;
 - **player nativo ExoPlayer**: legge HLS, TS, MP4 e MKV, con audio AC3 se il box lo supporta;
 - **ponte interno**: l'app legge DNS e server in http da sola, quindi il campo Ponte non serve e non compare;
+- **download offline**: tocca ⬇ su un film (vista telefono) o accanto a un episodio per scaricarlo; lo trovi nella scheda **Scaricati**, che si apre anche senza rete dal pulsante nella schermata di accesso. Il download lo fa Android (notifica, riprende se cade la rete) e i file stanno nella memoria privata dell'app: si possono eliminare da Scaricati (due tocchi) e spariscono se disinstalli l'app. Le dirette non si scaricano. Sul televisore i film non hanno il pulsante ⬇, solo gli episodi;
 - **anche su telefono**: sul telefono l'app usa la vista touch (con le stelle per i preferiti) e il player si gira in orizzontale.
 
 ### Installazione
