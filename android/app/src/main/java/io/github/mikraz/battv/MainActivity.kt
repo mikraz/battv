@@ -164,6 +164,19 @@ class MainActivity : ComponentActivity() {
                 packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
         }
 
+        /** Scarica un film o un episodio per vederlo offline: "ok", "exists" o "err:motivo" */
+        @JavascriptInterface
+        fun dlStart(key: String, title: String, logo: String, url: String, extra: String): String =
+            Downloads.start(applicationContext, key, title, logo, url, extra)
+
+        /** Elenco dei download in JSON (vedi Downloads.list) */
+        @JavascriptInterface
+        fun dlList(): String = Downloads.list(applicationContext)
+
+        /** Annulla o cancella un download, file compreso */
+        @JavascriptInterface
+        fun dlRemove(key: String) = Downloads.remove(applicationContext, key)
+
         @JavascriptInterface
         fun toast(msg: String) = runOnUiThread {
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()

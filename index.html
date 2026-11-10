@@ -236,6 +236,15 @@ button{-webkit-tap-highlight-color:transparent}
   #player.mini{width:min(300px,45vw);bottom:8px;right:8px}
 }
 
+/* Download per vedere offline (solo nell'app) */
+.grid:not(.live) .dlb{position:absolute;top:5px;left:5px;width:36px;height:36px;padding:0;border:0;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:1}
+.dlb:focus-visible,.dlx:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.eprow,.dlrow{display:flex;gap:8px;margin-bottom:8px}
+.eprow .ep,.dlrow .ep{margin:0;flex:1;width:auto}
+.dlx{flex:none;width:48px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--fg);font-size:18px;padding:0}
+body.tv .eprow,body.tv .dlrow{margin-bottom:5px;gap:6px}
+body.tv .dlx{width:38px}
+
 /* Prossimo episodio */
 #nextup{position:fixed;z-index:20;right:24px;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:min(360px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:6px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
 #nextup small,#nutime{color:var(--mute);font-size:13px}
@@ -261,6 +270,7 @@ body.tv #nextup{padding:10px 12px;width:300px}
     <label class="webonly">Ponte https (se il server è in http) <input id="px" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://iptv-ponte.nome.workers.dev/?k=chiave"></label>
     <label class="row" style="color:var(--fg)"><input id="rem" type="checkbox" checked> Ricorda su questo dispositivo</label>
     <button class="btn" id="go">Connetti</button>
+    <button class="btn ghost" id="godl" type="button" hidden>Scaricati (senza connessione)</button>
     <div class="err" id="lerr"></div>
     <div class="or webonly">oppure</div>
     <label class="btn ghost webonly" style="text-align:center;display:block">Carica un file M3U
@@ -276,6 +286,7 @@ body.tv #nextup{padding:10px 12px;width:300px}
       <button class="tab" data-t="live"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 3l4 4 4-4"/></svg>Live</button>
       <button class="tab" data-t="vod"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7.5 4v16M16.5 4v16M3 12h4.5M16.5 12H21"/></svg>Film</button>
       <button class="tab" data-t="series"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M6 6h12M9 3h6"/></svg>Serie TV</button>
+      <button class="tab" data-t="dl" hidden><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>Scaricati</button>
     </div>
     <input id="q" type="search" placeholder="Cerca…">
     <button class="btn ghost" id="out">Esci</button>
@@ -482,13 +493,92 @@ function toggleFav(i){
   store.set(favStore(),f);
 }
 
+/* ---------- Download per vedere offline (solo nell'app: i file li scarica e li tiene Android) ---------- */
+const hashS=x=>{let h=5381;for(const c of x)h=(h*33^c.charCodeAt(0))>>>0;return h.toString(36)};
+const dlKeyMovie=i=>i.url?'u:'+hashS(i.url):'vod:'+i.id;
+const dlKeyEp=e=>'ep:'+e.id;
+function dlItems(){if(!NATIVE)return[];try{return JSON.parse(BatTVNative.dlList())}catch(e){return[]}}
+/* chiave → 'done' oppure 'run'; i download falliti contano come non scaricati, così si possono rifare */
+function dlMap(){const m={};dlItems().forEach(d=>{if(d.state!=='failed')m[d.key]=d.state==='done'?'done':'run'});return m}
+function dlBtn(i,n){
+  if(!NATIVE||TV||typeOf(i)!=='vod')return '';
+  const st=(S.dlMap||{})[dlKeyMovie(i)];
+  return `<button class="dlb" data-d="${n}" aria-label="${st==='done'?'Già scaricato':st?'Download in corso':'Scarica per vedere offline'}">${st==='done'?'✓':st?'⏳':'⬇'}</button>`;
+}
+function dlStart(key,title,logo,url,extra){
+  if(/\.m3u8?(\?|$)/i.test(url)){BatTVNative.toast('Questo contenuto non si può scaricare.');return}
+  const r=BatTVNative.dlStart(key,title,logo||'',url,JSON.stringify(extra||{}));
+  BatTVNative.toast(r==='ok'?'Download iniziato. Lo trovi in Scaricati.':r==='exists'?'Già scaricato o in corso.':'Impossibile scaricare: '+r.replace(/^err:/,''));
+}
+const fmtB=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':Math.max(1,Math.round(b/1e6))+' MB';
+function dlText(d){
+  if(d.state==='done')return fmtB(d.total||d.done);
+  if(d.state==='failed')return 'Non riuscito';
+  if(d.state==='waiting')return 'In attesa…';
+  return d.total>0?Math.floor(d.done*100/d.total)+'% · '+fmtB(d.total):'In corso…';
+}
+function renderDl(arr){
+  const L=$('#list'),all=arr||dlItems(),q=S.q.toLowerCase();
+  const rows=all.filter(d=>!q||d.title.toLowerCase().includes(q));
+  S.dlSig=all.map(d=>d.key+d.state).join();
+  /* Ridisegnando rimetto il riquadro del telecomando sulla riga che c'era */
+  const fo=document.activeElement,inList=fo&&L.contains(fo),fp=inList&&fo.dataset.dlplay,fr=inList&&fo.dataset.dlrm;
+  L._items=[];
+  L.innerHTML=rows.length?`<p class="status">${rows.length} ${rows.length===1?'scaricato':'scaricati'}</p>`+rows.map(d=>
+    `<div class="dlrow"><button class="ep" data-dlplay="${esc(d.key)}">${esc(d.title)}<span class="mk" data-k="${esc(d.key)}">${esc(dlText(d))}</span></button><button class="dlx" data-dlrm="${esc(d.key)}" aria-label="${d.state==='done'?'Elimina':'Annulla'}">${d.state==='done'?'🗑':'✕'}</button></div>`).join('')
+    :`<p class="empty">Nessun download. ${TV?'Nella scheda di una serie scegli ⬇ accanto a un episodio.':'Tocca ⬇ su un film o accanto a un episodio per scaricarlo.'}</p>`;
+  const n=fp?L.querySelector(`[data-dlplay="${CSS.escape(fp)}"]`):fr?L.querySelector(`[data-dlrm="${CSS.escape(fr)}"]`):null;
+  if(n)focusEl(n);
+}
+function dlRow(b){
+  if(b.dataset.dlrm){
+    /* Due tocchi per eliminare, così un tocco sbagliato non cancella un film da 2 GB */
+    if(!b.dataset.arm){
+      b.dataset.arm=1;const old=b.textContent;b.textContent='Elimina?';b.style.width='auto';b.style.padding='0 12px';
+      setTimeout(()=>{if(document.contains(b)){delete b.dataset.arm;b.textContent=old;b.style.width='';b.style.padding=''}},3000);
+      return;
+    }
+    BatTVNative.dlRemove(b.dataset.dlrm);renderDl();
+    focusEl($('#list').querySelector('[data-dlplay]')||$('.tab[data-t=dl]'));
+    BatTVNative.toast('Eliminato');return;
+  }
+  const d=dlItems().find(x=>x.key===b.dataset.dlplay);if(!d)return;
+  if(d.state!=='done'){BatTVNative.toast(d.state==='failed'?'Download non riuscito: eliminalo e riprova.':'Download ancora in corso.');return}
+  let x={};try{x=JSON.parse(d.extra||'{}')}catch(e){}
+  /* hasNext: guardare un episodio scaricato non deve segnare la serie come finita */
+  const m=x.meta?{...x.meta,hasNext:true}:null;
+  let start=0;
+  if(m){const L=(getProg()[m.sid]||{}).last;if(L&&!L.done&&String(L.epId)===String(m.epId))start=L.pos||0}
+  S.lastFocus=b;
+  play(d.title,d.uri,false,m,start);
+}
+/* Ogni 1,5 secondi: aggiorna le percentuali (o ridisegna se cambia qualcosa) e, nel login, mostra "Scaricati" se ce ne sono */
+function dlTick(){
+  if(document.hidden)return;
+  if(!$('#login').hidden){$('#godl').hidden=!dlItems().some(d=>d.state==='done');return}
+  if(S.tab!=='dl'||$('#app').hidden)return;
+  const a=dlItems();
+  if(a.map(d=>d.key+d.state).join()!==S.dlSig){renderDl(a);return}
+  a.forEach(d=>{const e=$('#list').querySelector(`.mk[data-k="${CSS.escape(d.key)}"]`);if(e)e.textContent=dlText(d)});
+}
+/* Senza rete non si può accedere al provider: si entra direttamente nei download (preferiti e progressi restano quelli dell'account salvato) */
+function enterOffline(){
+  const x=store.get('xt');
+  if(x){S.mode='x';S.base=x.base;S.u=x.u;S.p=x.p;S.home=x.home||x.base;S.dns='';S.px=''}
+  $('#login').hidden=true;$('#app').hidden=false;
+  document.querySelectorAll('.tab[data-t]').forEach(b=>b.hidden=b.dataset.t!=='dl');
+  show('dl').then(()=>focusEl($('.tab[data-t=dl]')));
+}
+$('#godl').onclick=enterOffline;
+
 /* ---------- UI ---------- */
 async function show(t){
   S.tab=t;S.cat='*';S.limit=120;S.editCats=false;
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',b.dataset.t===t));
-  $('#cats').hidden=t==='fav';$('main').classList.toggle('nocats',t==='fav');
+  $('#cats').hidden=t==='fav'||t==='dl';$('main').classList.toggle('nocats',t==='fav'||t==='dl');
   $('#cats').innerHTML='';$('#list').innerHTML='<p class="status">Caricamento…</p>';
   if(t==='fav'){S.items.fav=getFavs();S.cats.fav=[];renderList();return}
+  if(t==='dl'){renderDl();return}
   try{if(S.mode==='x')await loadTab(t)}catch(e){$('#list').innerHTML=`<p class="status" style="color:var(--bad)">${esc(e.message)}</p>`;return}
   renderCats();renderList();
 }
@@ -538,9 +628,11 @@ function filtered(){
 }
 function card(i,n,live,favs){
   const on=favs.has(favKey(i));
-  return `<div class="item"><button class="open" data-n="${n}"><div class="poster" ${i.logo?`style="background-image:url('${esc(P(i.logo)).replace(/'/g,'%27')}')"`:''}></div><span>${esc(i.name)}${i.sub?`<small class="sub">${esc(i.sub)}</small>`:''}</span></button><button class="fav" data-f="${n}" aria-pressed="${on}" aria-label="${on?'Togli dai':'Aggiungi ai'} preferiti">${on?'★':'☆'}</button></div>`;
+  return `<div class="item"><button class="open" data-n="${n}"><div class="poster" ${i.logo?`style="background-image:url('${esc(P(i.logo)).replace(/'/g,'%27')}')"`:''}></div><span>${esc(i.name)}${i.sub?`<small class="sub">${esc(i.sub)}</small>`:''}</span></button><button class="fav" data-f="${n}" aria-pressed="${on}" aria-label="${on?'Togli dai':'Aggiungi ai'} preferiti">${on?'★':'☆'}</button>${dlBtn(i,n)}</div>`;
 }
 function renderList(){
+  if(S.tab==='dl'){renderDl();return}
+  S.dlMap=dlMap();
   const favs=new Set(getFavs().map(favKey)),L=$('#list');
   /* "Continua a guardare": le serie lasciate a metà, in cima a Preferiti e Serie TV */
   const cont=S.mode==='x'&&!S.q&&(S.tab==='fav'||(S.tab==='series'&&S.cat==='*'))?continueList():[];
@@ -630,6 +722,7 @@ async function openSeries(it){
     let cur;
     const draw=s=>{
       cur=s;
+      S.dlMap=dlMap();
       const p=getProg()[it.id]||{},w=p.w||{},L=p.last,r=resumeTarget(it.id,eps,seasons);
       const rlabel=r&&`${r.next?'▶ Prossimo':'▶ Riprendi'} S${esc(r.s)}E${esc(r.e.episode_num)} · ${esc(r.e.title||'Episodio')}${r.pos>5?` <small>da ${fmtT(r.pos)}</small>`:''}`;
       box.innerHTML=`<div class="row"><button class="btn ghost" id="sback">Indietro</button></div>
@@ -639,11 +732,18 @@ async function openSeries(it){
       ${eps[s].map((e,n)=>{
         const half=L&&!L.done&&String(L.epId)===String(e.id)&&L.pos>5;
         const mark=w[e.id]?'<span class="mk">✓</span>':half?`<span class="mk">${fmtT(L.pos)}</span>`:'';
-        return `<button class="ep${w[e.id]?' seen':''}" data-e="${n}">${esc(e.episode_num)}. ${esc(e.title||'Episodio')}${mark}</button>`}).join('')}`;
+        const ds=NATIVE&&S.dlMap[dlKeyEp(e)],dl=NATIVE?`<button class="dlx" data-dl="${n}" aria-label="${ds==='done'?'Già scaricato':ds?'Download in corso':'Scarica per vedere offline'}">${ds==='done'?'✓':ds?'⏳':'⬇'}</button>`:'';
+        return `<div class="eprow"><button class="ep${w[e.id]?' seen':''}" data-e="${n}">${esc(e.episode_num)}. ${esc(e.title||'Episodio')}${mark}</button>${dl}</div>`}).join('')}`;
       box.onclick=ev=>{
         const b=ev.target.closest('button');if(!b)return;
         if(b.id==='sback'){battvBack();return}
         if(b.id==='sresume'){const t=resumeTarget(it.id,eps,seasons);if(t)playEp(t.s,t.e,t.pos);return}
+        if(b.dataset.dl){
+          const e=eps[cur][b.dataset.dl];
+          dlStart(dlKeyEp(e),`${it.name} · S${cur}E${e.episode_num}`,it.logo,epUrl(e),{acct:acct(),meta:{sid:it.id,s:cur,epId:e.id,num:e.episode_num,info}});
+          /* Aggiorno solo il pulsante (ridisegnare la scheda farebbe saltare lo scorrimento) */
+          const st=dlMap()[dlKeyEp(e)];b.textContent=st==='done'?'✓':st?'⏳':'⬇';return;
+        }
         if(b.dataset.s){draw(b.dataset.s);focusEl(box.querySelector(`[data-s="${CSS.escape(b.dataset.s)}"]`));return}
         if(b.dataset.e){
           /* L'episodio lasciato a metà riparte da dove eri, gli altri dall'inizio */
@@ -744,7 +844,7 @@ function stop(){
 /* ---------- Eventi ---------- */
 function enterApp(){$('#login').hidden=true;$('#app').hidden=false;
   const avail=['live','vod','series'].filter(t=>S.mode==='x'||(S.items[t]||[]).length);
-  document.querySelectorAll('.tab[data-t]').forEach(b=>b.hidden=b.dataset.t!=='fav'&&!avail.includes(b.dataset.t));
+  document.querySelectorAll('.tab[data-t]').forEach(b=>b.hidden=b.dataset.t==='dl'?!NATIVE:b.dataset.t!=='fav'&&!avail.includes(b.dataset.t));
   show(getFavs().length?'fav':(avail[0]||'live')).then(()=>focusEl($('.tab[aria-pressed=true]')));
 }
 $('#lf').addEventListener('submit',async e=>{
@@ -785,6 +885,13 @@ document.querySelectorAll('.tab[data-t]').forEach(b=>b.onclick=()=>show(b.datase
 let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{S.q=e.target.value;S.limit=120;renderList()},200)};
 $('#list').onclick=e=>{
   if(e.target.id==='more'){const n=S.limit;S.limit+=120;renderList();focusEl($('#list').querySelector(`.open[data-n="${n+($('#list')._off||0)}"]`));return}
+  const dlb=e.target.closest('.dlb'),dr=e.target.closest('[data-dlplay],[data-dlrm]');
+  if(dlb){
+    const it=$('#list')._items[dlb.dataset.d];
+    dlStart(dlKeyMovie(it),it.name,it.logo,it.url||xUrl('movie',it),{acct:acct()});
+    renderList();focusEl($('#list').querySelector(`.dlb[data-d="${CSS.escape(dlb.dataset.d)}"]`));return;
+  }
+  if(dr){dlRow(dr);return}
   const fb=e.target.closest('.fav');
   if(fb){
     const it=$('#list')._items[fb.dataset.f];toggleFav(it);
@@ -911,6 +1018,7 @@ document.addEventListener('keydown',e=>{
 const TV=NATIVE&&(!BatTVNative.isTv||BatTVNative.isTv());
 if(NATIVE){
   document.body.classList.add('native');
+  setInterval(dlTick,1500);dlTick();
   if(TV)document.body.classList.add('tv');
   /* Il player nativo segnala un errore: se il provider ha cambiato server riprovo da quello nuovo */
   /* pos e dur arrivano dal player nativo in millisecondi (dur negativa se è una diretta) */
