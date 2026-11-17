@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>BatTV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&display=swap">
 <style>
 /* Layout: barra in alto (sezioni + ricerca), categorie a sinistra, griglia a destra; player a tutto schermo. Tema scuro unico, pensato per lo schermo della Tesla. */
 :root{
@@ -33,6 +35,12 @@ input[type=text],input[type=password],input[type=url],input[type=search]{width:1
 .err{color:var(--bad);font-size:14px;min-height:1em}
 .or{text-align:center;color:var(--mute);font-size:13px}
 
+/* Marchio mikraz (design system): scritta mikraz, quadratino nel colore dell'app, nome dell'app */
+.brand{margin:0;display:inline-flex;align-items:baseline;flex:none;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:700;font-size:22px;line-height:1;letter-spacing:-.01em;color:var(--fg);white-space:nowrap}
+.mkz{height:.6em;width:auto;vertical-align:baseline;margin-right:.4em;flex:none}.mkz path{fill:currentColor}.mkz rect{fill:var(--accent)}
+.box .brand{font-size:28px}
+header .brand{margin-right:8px}
+body.tv header .brand{font-size:17px}
 /* App */
 #app{height:100%;display:grid;grid-template-rows:auto 1fr}
 header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
@@ -162,6 +170,7 @@ button{-webkit-tap-highlight-color:transparent}
   #login{padding:calc(16px + env(safe-area-inset-top,0px)) 12px calc(16px + env(safe-area-inset-bottom,0px))}
   .box{padding:20px 18px}
   header{flex-wrap:nowrap;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) calc(12px + env(safe-area-inset-right,0px)) 8px calc(12px + env(safe-area-inset-left,0px))}
+  header .brand{font-size:17px;margin-right:2px}
   header input{min-width:0;padding:9px 12px}
   header #out{flex:none;padding:9px 12px}
   /* Barra delle sezioni in fondo allo schermo, a portata di pollice */
@@ -261,7 +270,7 @@ body.tv #nextup{padding:10px 12px;width:300px}
 
 <section id="login">
   <form class="box" id="lf" novalidate>
-    <h1>BatTV</h1>
+    <h1 class="brand"><svg class="mkz" viewBox="2 13 162 38" role="img" aria-label="mikraz"><path d="M2.64 49.82V23.62H9.36V30L8.64 28.94Q9.22 25.92 11.42 24.48Q13.63 23.04 16.7 23.04Q19.97 23.04 22.44 24.7Q24.91 26.35 25.54 29.14L23.47 29.33Q24.77 26.11 27.17 24.58Q29.57 23.04 32.78 23.04Q35.62 23.04 37.8 24.29Q39.98 25.54 41.23 27.77Q42.48 30 42.48 32.98V49.82H35.28V34.51Q35.28 32.98 34.73 31.87Q34.18 30.77 33.17 30.14Q32.16 29.52 30.72 29.52Q29.33 29.52 28.3 30.14Q27.26 30.77 26.71 31.87Q26.16 32.98 26.16 34.51V49.82H18.96V34.51Q18.96 32.98 18.41 31.87Q17.86 30.77 16.85 30.14Q15.84 29.52 14.4 29.52Q13.01 29.52 11.98 30.14Q10.94 30.77 10.39 31.87Q9.84 32.98 9.84 34.51V49.82Z M45.79 49.82V23.62H52.99V49.82ZM45.79 21.26V14.06H52.99V21.26Z M56.83 49.82V13.49H64.03V36.77L61.34 35.9L72.91 23.62H81.79L72.29 34.18L81.74 49.82H73.58L65.66 36.53L69.84 35.47L61.82 44.21L64.03 40.03V49.82Z M83.52 49.82V23.62H90.24V29.9L89.76 28.99Q90.62 25.68 92.62 24.5Q94.61 23.33 97.34 23.33H98.88V29.57H96.62Q93.98 29.57 92.35 31.18Q90.72 32.78 90.72 35.71V49.82Z M108.72 50.4Q105.89 50.4 103.82 49.49Q101.76 48.58 100.66 46.87Q99.55 45.17 99.55 42.82Q99.55 40.61 100.56 38.9Q101.57 37.2 103.66 36.05Q105.74 34.9 108.86 34.42L116.88 33.12V38.4L110.16 39.6Q108.62 39.89 107.81 40.58Q106.99 41.28 106.99 42.58Q106.99 43.78 107.9 44.45Q108.82 45.12 110.16 45.12Q111.94 45.12 113.28 44.35Q114.62 43.58 115.37 42.26Q116.11 40.94 116.11 39.36V32.54Q116.11 31.06 114.94 30.05Q113.76 29.04 111.74 29.04Q109.82 29.04 108.36 30.1Q106.9 31.15 106.22 32.88L100.46 30.14Q101.23 27.94 102.91 26.35Q104.59 24.77 106.94 23.9Q109.3 23.04 112.08 23.04Q115.39 23.04 117.94 24.24Q120.48 25.44 121.9 27.58Q123.31 29.71 123.31 32.54V49.82H116.59V45.6L118.22 45.31Q117.07 47.04 115.68 48.17Q114.29 49.3 112.56 49.85Q110.83 50.4 108.72 50.4Z M125.04 49.82V44.06L140.11 27.46L141.17 29.86H125.66V23.62H147.55V29.38L132.86 46.03L131.81 43.58H147.6V49.82Z"/><rect x="151.7" y="38.8" width="11" height="11" rx="3"/></svg>BatTV</h1>
     <p>Inserisci i dati Xtream del tuo provider.</p>
     <label>Server <input id="srv" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://server.esempio:443"></label>
     <label>Indirizzo DNS del provider, per aggiornare il server da solo (facoltativo) <input id="dns" type="text" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://sito.esempio/dns.php"></label>
@@ -281,6 +290,7 @@ body.tv #nextup{padding:10px 12px;width:300px}
 
 <div id="app" hidden>
   <header>
+    <div class="brand" aria-label="mikraz BatTV"><svg class="mkz" viewBox="2 13 162 38" aria-hidden="true"><path d="M2.64 49.82V23.62H9.36V30L8.64 28.94Q9.22 25.92 11.42 24.48Q13.63 23.04 16.7 23.04Q19.97 23.04 22.44 24.7Q24.91 26.35 25.54 29.14L23.47 29.33Q24.77 26.11 27.17 24.58Q29.57 23.04 32.78 23.04Q35.62 23.04 37.8 24.29Q39.98 25.54 41.23 27.77Q42.48 30 42.48 32.98V49.82H35.28V34.51Q35.28 32.98 34.73 31.87Q34.18 30.77 33.17 30.14Q32.16 29.52 30.72 29.52Q29.33 29.52 28.3 30.14Q27.26 30.77 26.71 31.87Q26.16 32.98 26.16 34.51V49.82H18.96V34.51Q18.96 32.98 18.41 31.87Q17.86 30.77 16.85 30.14Q15.84 29.52 14.4 29.52Q13.01 29.52 11.98 30.14Q10.94 30.77 10.39 31.87Q9.84 32.98 9.84 34.51V49.82Z M45.79 49.82V23.62H52.99V49.82ZM45.79 21.26V14.06H52.99V21.26Z M56.83 49.82V13.49H64.03V36.77L61.34 35.9L72.91 23.62H81.79L72.29 34.18L81.74 49.82H73.58L65.66 36.53L69.84 35.47L61.82 44.21L64.03 40.03V49.82Z M83.52 49.82V23.62H90.24V29.9L89.76 28.99Q90.62 25.68 92.62 24.5Q94.61 23.33 97.34 23.33H98.88V29.57H96.62Q93.98 29.57 92.35 31.18Q90.72 32.78 90.72 35.71V49.82Z M108.72 50.4Q105.89 50.4 103.82 49.49Q101.76 48.58 100.66 46.87Q99.55 45.17 99.55 42.82Q99.55 40.61 100.56 38.9Q101.57 37.2 103.66 36.05Q105.74 34.9 108.86 34.42L116.88 33.12V38.4L110.16 39.6Q108.62 39.89 107.81 40.58Q106.99 41.28 106.99 42.58Q106.99 43.78 107.9 44.45Q108.82 45.12 110.16 45.12Q111.94 45.12 113.28 44.35Q114.62 43.58 115.37 42.26Q116.11 40.94 116.11 39.36V32.54Q116.11 31.06 114.94 30.05Q113.76 29.04 111.74 29.04Q109.82 29.04 108.36 30.1Q106.9 31.15 106.22 32.88L100.46 30.14Q101.23 27.94 102.91 26.35Q104.59 24.77 106.94 23.9Q109.3 23.04 112.08 23.04Q115.39 23.04 117.94 24.24Q120.48 25.44 121.9 27.58Q123.31 29.71 123.31 32.54V49.82H116.59V45.6L118.22 45.31Q117.07 47.04 115.68 48.17Q114.29 49.3 112.56 49.85Q110.83 50.4 108.72 50.4Z M125.04 49.82V44.06L140.11 27.46L141.17 29.86H125.66V23.62H147.55V29.38L132.86 46.03L131.81 43.58H147.6V49.82Z"/><rect x="151.7" y="38.8" width="11" height="11" rx="3"/></svg>BatTV</div>
     <div class="tabs">
       <button class="tab" data-t="fav"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/></svg><span class="tstar">★ </span>Preferiti</button>
       <button class="tab" data-t="live"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 3l4 4 4-4"/></svg>Live</button>
