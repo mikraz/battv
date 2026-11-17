@@ -177,6 +177,14 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun dlRemove(key: String) = Downloads.remove(applicationContext, key)
 
+        /** Apre o chiude la tastiera: sulla TV si apre solo quando si preme OK su un campo di testo */
+        @JavascriptInterface
+        fun keyboard(show: Boolean) = runOnUiThread {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            if (show) { web.requestFocus(); imm.showSoftInput(web, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+            else imm.hideSoftInputFromWindow(web.windowToken, 0)
+        }
+
         @JavascriptInterface
         fun toast(msg: String) = runOnUiThread {
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
