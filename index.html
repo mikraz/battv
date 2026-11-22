@@ -1018,16 +1018,19 @@ const isText=e=>e&&e.tagName==='INPUT'&&/^(text|search|url|password)$/.test(e.ty
 function lockText(e){if(!e.readOnly){e.readOnly=true;delete e.dataset.edit}}
 function kb(show){if(NATIVE&&BatTVNative.keyboard)BatTVNative.keyboard(show)}
 document.addEventListener('focusin',e=>{if(document.body.classList.contains('tv')&&isText(e.target)&&!e.target.dataset.edit)e.target.readOnly=true},true);
-document.addEventListener('focusout',e=>{if(document.body.classList.contains('tv')&&isText(e.target)){lockText(e.target);kb(false)}},true);
+let refocusing=false;
+document.addEventListener('focusout',e=>{if(refocusing)return;if(document.body.classList.contains('tv')&&isText(e.target)){lockText(e.target);kb(false)}},true);
 document.addEventListener('keydown',e=>{
   const t=document.activeElement;
   if(e.key!=='Enter'||!document.body.classList.contains('tv')||!isText(t))return;
   e.preventDefault();e.stopImmediatePropagation();
   if(t.readOnly){
     /* OK sul campo: si sblocca e si apre la tastiera */
+    /* Il campo era in sola lettura: lo tolgo e lo rifocalizzo, così la TV lo vede come campo in cui scrivere */
     t.dataset.edit='1';t.readOnly=false;
+    refocusing=true;t.blur();t.focus({preventScroll:true});refocusing=false;
     const n=t.value.length;try{t.setSelectionRange(n,n)}catch(_){}
-    kb(true);
+    setTimeout(()=>{if(document.activeElement===t&&!t.readOnly)kb(true)},60);
   }else{
     /* OK o Invio mentre si scrive: chiude la tastiera e si torna a muoversi con le frecce */
     lockText(t);kb(false);

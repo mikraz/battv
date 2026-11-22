@@ -181,7 +181,9 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun keyboard(show: Boolean) = runOnUiThread {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            if (show) { web.requestFocus(); imm.showSoftInput(web, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+            // Niente web.requestFocus(): sulla TV sposta il fuoco sul primo pulsante della pagina (Preferiti)
+            @Suppress("DEPRECATION")
+            if (show) web.post { imm.showSoftInput(web, android.view.inputmethod.InputMethodManager.SHOW_FORCED) }
             else imm.hideSoftInputFromWindow(web.windowToken, 0)
         }
 
